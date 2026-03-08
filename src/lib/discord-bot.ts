@@ -40,67 +40,74 @@ export async function registerDiscordBot() {
         // Ignore messages from bots (including ourselves)
         if (message.author.bot) return;
 
-        // Ensure there are attachments
-        if (message.attachments.size === 0) return;
+        // Check if there is text or an image
+        const hasImage = message.attachments.some((a) => a.contentType?.startsWith('image/'));
+        const hasText = message.content.trim().length > 0;
 
-        // Filter for image attachments
-        const imageAttachment = message.attachments.find((a) => a.contentType?.startsWith('image/'));
+        if (!hasImage && !hasText) return;
 
-        if (!imageAttachment || !imageAttachment.url) return;
-
-        console.log(`[Discord Bot] Found image from ${message.author.tag}. Processing...`);
+        console.log(`[Discord Bot] Found message from ${message.author.tag}. Processing...`);
 
         try {
-            // Show the "Bot is typing..." indicator to let the user know it's working
-            await message.channel.sendTyping();
-
-            // Download the image
-            const imageResponse = await fetch(imageAttachment.url);
-            const arrayBuffer = await imageResponse.arrayBuffer();
-            const buffer = Buffer.from(arrayBuffer);
-            const base64Image = buffer.toString('base64');
-            const mimeType = imageAttachment.contentType || 'image/jpeg';
-
-            // Send to OpenAI Vision
             const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-            const systemPrompt = `你是一位專業的『財經社群情報員』。
-使用者上傳了一張他們在社群群組收到的財經相關截圖。
-請你幫忙：
-1. 辨識並提取圖片中有提到的【股票代號或名稱】。
-2. 判斷這張圖傳遞的【情報摘要】（例如：這是在炫耀獲利、還是在推薦某檔股票、或是單純的走勢圖？）。
-3. 給出你客觀的【一小段評語】。
-如果圖片中完全沒有財經資訊，請回覆：「抱歉，我在這張圖中找不到明顯的財經資訊喔！」`;
+            const systemPrompt = `你是一位專業的『財經社群情報員』，在一個私人的投資群組中監聽對話與截圖。
+使用者的訊息可能包含純文字、圖片，或是兩者皆有。
+請你幫忙獨立思考並過濾：
+1. 【情報判斷】：這則訊息是否包含實質的財經情報、明牌、股票代號、公司名稱或投資討論？
+   - 如果「完全沒有」（例如只是日常聊天、打招呼、搞笑內容），請你直接回覆剛好四個字母：「NULL」，千萬不要回覆任何其他文字。
+   - 如果有財經情報，請繼續執行第 2 與 3 步。
+2. 【提取重點】：提取訊息或圖片中提到的【股票代號、名稱、或目標價/多空看法】。
+3. 【情報員評語】：根據這些資訊，給出你客觀的一小段分析或評語（例如判斷這是真材實料還是需要注意風險）。`;
+
+            const userContent: any[] = [];
+
+            if (hasText) {
+                userContent.push({ type: "text", text: `群組文字內容：「${message.content}」` });
+            }
+
+            if (hasImage) {
+                const imageAttachment = message.attachments.find((a) => a.contentType?.startsWith('image/'))!;
+                const imageResponse = await fetch(imageAttachment.url);
+                const arrayBuffer = await imageResponse.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+                const base64Image = buffer.toString('base64');
+                const mimeType = imageAttachment.contentType || 'image/jpeg';
+
+                userContent.push({
+                    type: "image_url",
+                    image_url: { url: `data:${mimeType};base64,${base64Image}` }
+                });
+            }
+
+            // Always show typing so the user knows the AI is thinking (it will disappear if the AI returns NULL and we don't reply)
+            await message.channel.sendTyping();
 
             const aiResponse = await openai.chat.completions.create({
                 model: "gpt-4o",
                 messages: [
                     { role: "system", content: systemPrompt },
-                    {
-                        role: "user",
-                        content: [
-                            { type: "text", text: message.content ? `附加的文字內容：「${message.content}」\n請結合圖片一起分析重點：` : "請幫我分析這張截圖的重點：" },
-                            {
-                                type: "image_url",
-                                image_url: {
-                                    url: `data:${mimeType};base64,${base64Image}`,
-                                },
-                            },
-                        ],
-                    }
+                    { role: "user", content: userContent }
                 ],
                 max_tokens: 500,
             });
 
-            const replyText = aiResponse.choices[0].message.content;
+            const replyText = aiResponse.choices[0].message.content?.trim() || "";
 
-            // Reply to the user in discord, mentioning them
-            if (replyText) {
-                await message.reply({ content: `🤖 **情報員分析報告：**\n\n${replyText}` });
+            // Reply to the user in discord only if the AI found financial info
+            if (replyText !== "NULL" && replyText.length > 0) {
+                await message.reply({ content: `🤖 **情報員雷達 (攔截自 ${message.author.username} 的情報)：**\n\n${replyText}` });
+                console.log(`[Discord Bot] Replied to ${message.author.tag} with analysis.`);
+            } else {
+                console.log(`[Discord Bot] Message ignored (No financial info detected).`);
             }
         } catch (err: any) {
             console.error('[Discord Bot] Error processing message:', err);
-            await message.reply({ content: `⚠️ 抱歉，我在處理這張圖片時發生了錯誤。` });
+            // Optionally, we don't want to reply with an error message on EVERY text message if the API fails, to avoid spam.
+            // But if it had an image, they definitely expected a reply.
+            if (hasImage) {
+                await message.reply({ content: `⚠️ 抱歉，我在處理這則情報時發生了錯誤。` });
+            }
         }
     });
 
