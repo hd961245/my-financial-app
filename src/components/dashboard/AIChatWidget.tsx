@@ -9,7 +9,7 @@ import { Bot, Send, Loader2 } from "lucide-react";
 export function AIChatWidget() {
     const [symbol, setSymbol] = useState("");
     const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState<string | null>(null);
+    const [result, setResult] = useState<{ openai: string, gemini: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const handleAnalyze = async (e: React.FormEvent) => {
@@ -75,9 +75,22 @@ export function AIChatWidget() {
                 )}
 
                 {result && (
-                    <div className="p-4 bg-white dark:bg-zinc-900 rounded-md border border-blue-100 dark:border-zinc-800 shadow-inner">
-                        <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 whitespace-pre-wrap leading-relaxed">
-                            {result}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-4 bg-white dark:bg-zinc-900 rounded-md border border-blue-100 dark:border-zinc-800 shadow-inner">
+                            <h3 className="font-bold text-blue-700 dark:text-blue-400 mb-2 border-b pb-2 flex items-center gap-2">
+                                <Bot className="w-4 h-4" /> OpenAI (GPT-4o)
+                            </h3>
+                            <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 whitespace-pre-wrap leading-relaxed">
+                                {result.openai}
+                            </div>
+                        </div>
+                        <div className="p-4 bg-white dark:bg-zinc-900 rounded-md border border-purple-100 dark:border-zinc-800 shadow-inner">
+                            <h3 className="font-bold text-purple-700 dark:text-purple-400 mb-2 border-b pb-2 flex items-center gap-2">
+                                <Bot className="w-4 h-4" /> Google (Gemini 2.5)
+                            </h3>
+                            <div className="prose prose-sm dark:prose-invert max-w-none space-y-2 whitespace-pre-wrap leading-relaxed">
+                                {result.gemini}
+                            </div>
                         </div>
                     </div>
                 )}
