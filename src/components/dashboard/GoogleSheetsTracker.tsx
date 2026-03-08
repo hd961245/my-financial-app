@@ -61,7 +61,7 @@ export function GoogleSheetsTracker() {
         // Extract ID if user pasted full URL
         let finalId = sheetId.trim();
         if (finalId.includes("/d/")) {
-            const match = finalId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+            const match = finalId.match(/\/d\/(e\/[a-zA-Z0-9-_]+|[a-zA-Z0-9-_]+)/);
             if (match && match[1]) {
                 finalId = match[1];
             }

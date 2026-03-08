@@ -14,7 +14,13 @@ export async function GET(request: Request) {
         // To avoid the "API Key Required" error for public sheets, we can 
         // use Google Sheets' built-in CSV export endpoint directly.
         // It works for any sheet where "Anyone with the link can view" is enabled.
-        const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+        let csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+
+        // If the user provided a "Publish to the web" link, the ID starts with 'e/'
+        // The export URL format is slightly different.
+        if (spreadsheetId.startsWith('e/')) {
+            csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/pub?output=csv`;
+        }
 
         const response = await fetch(csvUrl);
         if (!response.ok) {
