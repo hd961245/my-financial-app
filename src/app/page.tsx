@@ -6,6 +6,7 @@ import { PortfolioTracker } from "@/components/dashboard/PortfolioTracker";
 import { StockHealthAnalyzer } from "@/components/dashboard/StockHealthAnalyzer";
 import { CapitalFlowTracker } from "@/components/dashboard/CapitalFlowTracker";
 import { DataSourceManager } from "@/components/dashboard/DataSourceManager";
+import { GoogleSheetsTracker } from "@/components/dashboard/GoogleSheetsTracker";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -68,8 +69,8 @@ export default function Home() {
 
     fetchIndices(); // Initial fetch
 
-    // Set up real-time polling every 10 seconds
-    const interval = setInterval(fetchIndices, 10000);
+    // Set up real-time polling every 60 seconds (1 minute)
+    const interval = setInterval(fetchIndices, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -123,6 +124,7 @@ export default function Home() {
             <TabsTrigger value="stocks">個股健康度</TabsTrigger>
             <TabsTrigger value="portfolio">投資組合</TabsTrigger>
             <TabsTrigger value="custom">自訂資料源</TabsTrigger>
+            <TabsTrigger value="watchlist">自選股清單</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -247,6 +249,10 @@ export default function Home() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="watchlist" className="space-y-4">
+            <GoogleSheetsTracker />
           </TabsContent>
 
         </Tabs>
