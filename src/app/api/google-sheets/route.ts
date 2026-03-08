@@ -26,14 +26,14 @@ export async function GET(request: Request) {
 
         const csvText = await response.text();
         if (!csvText) {
-            return NextResponse.json({ data: [] });
+            return NextResponse.json([]);
         }
 
         // Parse CSV text manually
         const rows = parseCSV(csvText);
 
         if (rows.length === 0) {
-            return NextResponse.json({ data: [] });
+            return NextResponse.json([]);
         }
 
         const headers = rows[0].map(h => h.trim());
