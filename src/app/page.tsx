@@ -127,6 +127,7 @@ export default function Home() {
             <TabsTrigger value="portfolio">投資組合</TabsTrigger>
             <TabsTrigger value="custom">自訂資料源</TabsTrigger>
             <TabsTrigger value="watchlist">自選股清單</TabsTrigger>
+            <TabsTrigger value="ai-assistant" className="font-bold text-green-600 dark:text-green-400">🤖 AI 投資大腦</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -135,11 +136,6 @@ export default function Home() {
               {renderCard("台灣加權指數 (TWII)", "^TWII", <TrendingUp className="h-4 w-4 text-muted-foreground" />)}
               {renderCard("那斯達克 (NASDAQ)", "^IXIC", <Activity className="h-4 w-4 text-muted-foreground" />)}
               {renderCard("美元/台幣 (USD/TWD)", "TWD=X", <DollarSign className="h-4 w-4 text-muted-foreground" />)}
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 mt-4">
-              <AIChatWidget />
-              <CommunityAssistantWidget />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mt-4">
@@ -261,6 +257,13 @@ export default function Home() {
 
           <TabsContent value="watchlist" className="space-y-4">
             <GoogleSheetsTracker />
+          </TabsContent>
+
+          <TabsContent value="ai-assistant" className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 pt-2">
+              <AIChatWidget />
+              <CommunityAssistantWidget />
+            </div>
           </TabsContent>
 
         </Tabs>

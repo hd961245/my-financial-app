@@ -30,9 +30,10 @@ export async function POST(request: Request) {
                 querySymbol = `${symbol}.TW`; // Append .TW for standard 4-digit Taiwanese stocks
             }
 
-            const quote = await yahooFinance.quote(querySymbol) as any;
-            if (quote) {
-                marketDataStr = `
+            try {
+                const quote = await yahooFinance.quote(querySymbol) as any;
+                if (quote) {
+                    marketDataStr = `
 - 股票名稱：${quote.shortName || quote.longName || symbol}
 - 最新股價：${quote.regularMarketPrice} ${quote.currency}
 - 當日漲跌幅：${quote.regularMarketChangePercent?.toFixed(2)}%
@@ -40,13 +41,20 @@ export async function POST(request: Request) {
 - 本益比 (P/E)：${quote.trailingPE ? quote.trailingPE.toFixed(2) : 'N/A'}
 - 預估本益比 (Forward P/E)：${quote.forwardPE ? quote.forwardPE.toFixed(2) : 'N/A'}
 - 市值：${quote.marketCap ? (quote.marketCap / 100000000).toFixed(2) + '億' : 'N/A'}
-                `.trim();
+                    `.trim();
+                }
+            } catch (quoteErr) {
+                console.warn("Quote failed for", querySymbol);
             }
 
-            // Fetch a few recent news articles for context
-            const searchResult = await yahooFinance.search(querySymbol, { newsCount: 3 }) as any;
-            if (searchResult.news && searchResult.news.length > 0) {
-                newsStr = searchResult.news.map((item: any, idx: number) => `${idx + 1}. [${new Date(item.providerPublishTime).toLocaleDateString()}] ${item.title}`).join('\n');
+            try {
+                // Fetch a few recent news articles for context
+                const searchResult = await yahooFinance.search(querySymbol, { newsCount: 3 }) as any;
+                if (searchResult.news && searchResult.news.length > 0) {
+                    newsStr = searchResult.news.map((item: any, idx: number) => `${idx + 1}. [${new Date(item.providerPublishTime).toLocaleDateString()}] ${item.title}`).join('\n');
+                }
+            } catch (searchErr) {
+                console.warn("Search failed for", querySymbol);
             }
         } catch (dataError) {
             console.warn("Failed to fetch yahoo finance data for context:", dataError);
