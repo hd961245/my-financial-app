@@ -8,6 +8,7 @@ import { CapitalFlowTracker } from "@/components/dashboard/CapitalFlowTracker";
 import { DataSourceManager } from "@/components/dashboard/DataSourceManager";
 import { GoogleSheetsTracker } from "@/components/dashboard/GoogleSheetsTracker";
 import { AIChatWidget } from "@/components/dashboard/AIChatWidget";
+import { CommunityAssistantWidget } from "@/components/dashboard/CommunityAssistantWidget";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -136,8 +137,9 @@ export default function Home() {
               {renderCard("美元/台幣 (USD/TWD)", "TWD=X", <DollarSign className="h-4 w-4 text-muted-foreground" />)}
             </div>
 
-            <div className="mt-4">
+            <div className="grid gap-4 md:grid-cols-2 mt-4">
               <AIChatWidget />
+              <CommunityAssistantWidget />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mt-4">
