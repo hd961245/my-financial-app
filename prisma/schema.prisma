@@ -18,6 +18,8 @@ model Trade {
   date       DateTime @default(now()) // Custom Trade Date
   categoryId String?  
   category   PortfolioCategory? @relation(fields: [categoryId], references: [id])
+  accountId  String?  // Optional for backward compatibility but required for paper trading
+  account    Account? @relation(fields: [accountId], references: [id])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -42,5 +44,27 @@ model NetWorthSnapshot {
   date       DateTime @default(now()) @unique
   totalValue Float    // Total aggregated value in the base currency (TWD)
   currency   String   @default("TWD") // Base currency of the snapshot
+  createdAt  DateTime @default(now())
+}
+
+model Account {
+  id           String   @id @default(cuid())
+  name         String   @default("Default Account")
+  currency     String   @default("TWD")
+  balance      Float    @default(0) // Current available cash
+  totalDeposit Float    @default(0) // Total historically deposited
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  trades       Trade[]
+  transactions AccountTransaction[]
+}
+
+model AccountTransaction {
+  id         Int      @id @default(autoincrement())
+  accountId  String
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type       String   // 'DEPOSIT', 'WITHDRAWAL', 'TRADE_BUY', 'TRADE_SELL'
+  amount     Float    // Positive for deposit/sell, negative for withdrawal/buy
+  notes      String?
   createdAt  DateTime @default(now())
 }
