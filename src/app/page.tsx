@@ -7,6 +7,7 @@ import { StockHealthAnalyzer } from "@/components/dashboard/StockHealthAnalyzer"
 import { CapitalFlowTracker } from "@/components/dashboard/CapitalFlowTracker";
 import { DataSourceManager } from "@/components/dashboard/DataSourceManager";
 import { GoogleSheetsTracker } from "@/components/dashboard/GoogleSheetsTracker";
+import { AIChatWidget } from "@/components/dashboard/AIChatWidget";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -134,7 +135,12 @@ export default function Home() {
               {renderCard("那斯達克 (NASDAQ)", "^IXIC", <Activity className="h-4 w-4 text-muted-foreground" />)}
               {renderCard("美元/台幣 (USD/TWD)", "TWD=X", <DollarSign className="h-4 w-4 text-muted-foreground" />)}
             </div>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+
+            <div className="mt-4">
+              <AIChatWidget />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 mt-4">
               <Card className="col-span-4">
                 <CardHeader>
                   <CardTitle>資產配置比例 (Portfolio Allocation)</CardTitle>
