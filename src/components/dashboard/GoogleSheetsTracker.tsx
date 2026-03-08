@@ -94,9 +94,14 @@ export function GoogleSheetsTracker() {
                             載入資料
                         </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                        請確保你的試算表權限設定為「知道連結的任何人」都可以「檢視」。
-                    </p>
+                    <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                        <p className="font-semibold text-blue-600">⚠️ Google 隱私政策更新提醒：</p>
+                        <ol className="list-decimal pl-4 space-y-1">
+                            <li>請在你的 Google 試算表點擊左上角 <b>檔案 (File)</b> &gt; <b>共用 (Share)</b> &gt; <b>發布到網路 (Publish to web)</b>。</li>
+                            <li>選擇 <b>[你的工作表名稱]</b> 與 <b>[逗號分隔值 .csv]</b>，然後點擊「發布」。</li>
+                            <li>將產生的網址（含有 <code className="bg-muted px-1 rounded">/e/2PACX...</code>）貼到上方框框中。</li>
+                        </ol>
+                    </div>
                     {error && (
                         <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-md text-sm">
                             ⚠️ 錯誤：{error}
