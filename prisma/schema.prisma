@@ -14,6 +14,7 @@ model Trade {
   type       String   // 'BUY' or 'SELL'
   shares     Float    // Quantity bought/sold
   price      Float    // Price per share
+  currency   String   @default("TWD") // E.g., 'TWD', 'USD'
   date       DateTime @default(now()) // Custom Trade Date
   categoryId String?  
   category   PortfolioCategory? @relation(fields: [categoryId], references: [id])
@@ -34,4 +35,12 @@ model DataSource {
   url       String
   type      String   // 'RSS' or 'HTML'
   createdAt DateTime @default(now())
+}
+
+model NetWorthSnapshot {
+  id         Int      @id @default(autoincrement())
+  date       DateTime @default(now()) @unique
+  totalValue Float    // Total aggregated value in the base currency (TWD)
+  currency   String   @default("TWD") // Base currency of the snapshot
+  createdAt  DateTime @default(now())
 }

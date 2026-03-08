@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { google } from 'googleapis';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,49 +11,39 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Missing Google Sheet ID' }, { status: 400 });
         }
 
-        // Initialize Google Sheets API without authentication.
-        // This will ONLY work for public sheets ("Anyone with the link can view") OR if an API key is provided
-        // We will pass an API key if available in env, otherwise rely on broad public access (which often fails without key)
-        // For best results, user should provide GOOGLE_API_KEY in Zeabur for public sheets
-        const sheets = google.sheets({
-            version: 'v4',
-            auth: process.env.GOOGLE_API_KEY || ''
-        });
+        // To avoid the "API Key Required" error for public sheets, we can 
+        // use Google Sheets' built-in CSV export endpoint directly.
+        // It works for any sheet where "Anyone with the link can view" is enabled.
+        const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
 
-        // Assuming data is on the first sheet, we can fetch all cells
-        // In v4, fetching just the Spreadsheet ID usually requires knowing the sheet name. 
-        // A common generic range is 'A:Z' or 'Sheet1!A:Z'. If 'Sheet1' is renamed, it might fail.
-        // To be safe, let's first get the spreadsheet metadata to find the first sheet's title.
-        let firstSheetTitle = 'Sheet1';
-        try {
-            const meta = await sheets.spreadsheets.get({ spreadsheetId });
-            firstSheetTitle = meta.data.sheets?.[0]?.properties?.title || 'Sheet1';
-        } catch (metaErr) {
-            console.warn("Could not fetch spreadsheet metadata. Assuming 'Sheet1' or first sheet.", metaErr);
-            // Defaulting fallback range
+        const response = await fetch(csvUrl);
+        if (!response.ok) {
+            if (response.status === 404) {
+                return NextResponse.json({ error: '找不到該試算表。請確認網址正確，且權限已經設定為「知道連結的任何人」皆可「檢視」。' }, { status: 404 });
+            }
+            throw new Error(`Google Sheets responded with status: ${response.status}`);
         }
 
-        const range = `${firstSheetTitle}!A:Z`;
-
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId,
-            range,
-        });
-
-        const rows = response.data.values;
-        if (!rows || rows.length === 0) {
+        const csvText = await response.text();
+        if (!csvText) {
             return NextResponse.json({ data: [] });
         }
 
-        // The first row is the header
-        const headers: string[] = rows[0] || [];
+        // Parse CSV text manually
+        const rows = parseCSV(csvText);
 
-        // Map remaining rows to objects based on header indices
-        const data = rows.slice(1).map((row: any[], index: number) => {
+        if (rows.length === 0) {
+            return NextResponse.json({ data: [] });
+        }
+
+        const headers = rows[0].map(h => h.trim());
+
+        const data = rows.slice(1).map((row, index) => {
             const rowData: Record<string, string | number> = { id: String(index) };
             headers.forEach((header, colIndex) => {
-                const cleanHeader = typeof header === 'string' ? header.trim() : `Col${colIndex}`;
-                rowData[cleanHeader] = row[colIndex] !== undefined ? row[colIndex] : '';
+                const cleanHeader = header || `Col${colIndex}`;
+                // Keep as string initially, let frontend parse numbers if needed
+                rowData[cleanHeader] = row[colIndex] !== undefined ? row[colIndex].trim() : '';
             });
             return rowData;
         });
@@ -63,8 +52,57 @@ export async function GET(request: Request) {
     } catch (error: any) {
         console.error('Failed to fetch from Google Sheets:', error);
         return NextResponse.json(
-            { error: error?.message || 'Failed to fetch from Google Sheets. Make sure the sheet is public and the ID is correct.' },
+            { error: error?.message || 'Failed to fetch資料。確保您的試算表是最新的並且公開。' },
             { status: 500 }
         );
     }
+}
+
+// Simple CSV Parser to handle quotes and commas inside cells
+function parseCSV(text: string): string[][] {
+    const result: string[][] = [];
+    let row: string[] = [];
+    let currentCell = '';
+    let inQuotes = false;
+
+    // Ensure text ends with a newline to trigger the last row push
+    if (!text.endsWith('\n')) text += '\n';
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+
+        if (inQuotes) {
+            if (char === '"') {
+                // Check if it's an escaped quote
+                if (i < text.length - 1 && text[i + 1] === '"') {
+                    currentCell += '"';
+                    i++; // skip next quote
+                } else {
+                    inQuotes = false; // end of quoted string
+                }
+            } else {
+                currentCell += char;
+            }
+        } else {
+            if (char === '"') {
+                inQuotes = true;
+            } else if (char === ',') {
+                row.push(currentCell);
+                currentCell = '';
+            } else if (char === '\n' || char === '\r') {
+                if (char === '\r' && i < text.length - 1 && text[i + 1] === '\n') {
+                    i++; // skip \n of \r\n
+                }
+                row.push(currentCell);
+                result.push(row);
+                row = [];
+                currentCell = '';
+            } else {
+                currentCell += char;
+            }
+        }
+    }
+
+    // Clean up empty trailing rows caused by extra newlines
+    return result.filter(r => r.length > 1 || r[0] !== '');
 }
