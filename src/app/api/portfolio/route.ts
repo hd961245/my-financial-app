@@ -95,6 +95,31 @@ export async function GET() {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
+
+        // Handle batch insert
+        if (Array.isArray(body)) {
+            // Validate and type cast each row
+            const batchData = body.map((row: any) => ({
+                symbol: String(row.symbol).toUpperCase(),
+                type: String(row.type).toUpperCase(),
+                shares: Number(row.shares),
+                price: Number(row.price),
+                date: row.date ? new Date(row.date) : new Date(),
+                categoryId: row.categoryId || null
+            })).filter(r => r.symbol && !isNaN(r.shares) && !isNaN(r.price));
+
+            if (batchData.length === 0) {
+                return NextResponse.json({ error: 'No valid trades to insert' }, { status: 400 });
+            }
+
+            // Using createMany for better performance in PostgreSQL
+            const newTrades = await prisma.trade.createMany({
+                data: batchData
+            });
+            return NextResponse.json({ count: newTrades.count, message: 'Batch import successful' });
+        }
+
+        // Handle single insert (existing behavior)
         const { symbol, type, shares, price, date, categoryId } = body;
 
         const newTrade = await prisma.trade.create({
@@ -110,7 +135,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json(newTrade);
     } catch (error) {
-        console.error('Failed to add trade:', error);
-        return NextResponse.json({ error: 'Failed to add trade' }, { status: 500 });
+        console.error('Failed to add trade(s):', error);
+        return NextResponse.json({ error: 'Failed to add trade(s)' }, { status: 500 });
     }
 }

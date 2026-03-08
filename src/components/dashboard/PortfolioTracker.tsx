@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { RefreshCcw, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
+import * as xlsx from "xlsx";
 
 type HoldingItem = {
     id: number;
@@ -45,6 +46,7 @@ export function PortfolioTracker() {
     const [realizedPnL, setRealizedPnL] = useState<number>(0);
     const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
     const [loading, setLoading] = useState(true);
+    const [isImporting, setIsImporting] = useState(false);
 
     // Form states
     const [symbol, setSymbol] = useState("");
@@ -137,6 +139,61 @@ export function PortfolioTracker() {
                 fetchPortfolio(); // Refresh ungrouped trades
             }
         } catch (err) { console.error(err); }
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsImporting(true);
+        const reader = new FileReader();
+
+        reader.onload = async (event) => {
+            try {
+                const data = new Uint8Array(event.target?.result as ArrayBuffer);
+                const workbook = xlsx.read(data, { type: "array" });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = xlsx.utils.sheet_to_json(worksheet);
+
+                // Map Excel data to our expected format
+                const tradesToImport = jsonData.map((row: any) => ({
+                    symbol: row['股票代號'] || row['Symbol'] || '',
+                    type: (row['買賣'] || row['Type'] || 'BUY').toString().toUpperCase().includes('SELL') ? 'SELL' : 'BUY',
+                    shares: Number(row['股數'] || row['Shares']) || 0,
+                    price: Number(row['價格'] || row['Price']) || 0,
+                    date: row['日期'] || row['Date'] ? new Date(row['日期'] || row['Date']).toISOString() : new Date().toISOString(),
+                    categoryId: categoryId === 'none' ? null : categoryId
+                })).filter(t => t.symbol && t.shares > 0 && t.price > 0);
+
+                if (tradesToImport.length === 0) {
+                    alert('未在檔案中找到有效的交易紀錄。請確保有【股票代號, 股數, 價格】等欄位。');
+                    setIsImporting(false);
+                    return;
+                }
+
+                const res = await fetch("/api/portfolio", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(tradesToImport),
+                });
+
+                if (res.ok) {
+                    alert(`成功匯入 ${tradesToImport.length} 筆交易！`);
+                    fetchPortfolio();
+                } else {
+                    alert('匯入失敗，請稍後再試。');
+                }
+            } catch (error) {
+                console.error("Error parsing file:", error);
+                alert('解析檔案時發生錯誤。');
+            } finally {
+                setIsImporting(false);
+                if (e.target) e.target.value = ''; // Reset file input
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
     };
 
     const calculateUnrealizedPnL = (item: HoldingItem) => {
@@ -249,6 +306,20 @@ export function PortfolioTracker() {
                                     {tradeType === 'BUY' ? '新增買進紀錄' : '新增賣出紀錄'}
                                 </Button>
                             </form>
+
+                            <div className="mt-6 pt-4 border-t border-muted">
+                                <h4 className="text-sm font-medium mb-3">批次匯入交易 (Batch Import)</h4>
+                                <div className="flex items-center space-x-2">
+                                    <Input
+                                        type="file"
+                                        accept=".xlsx, .xls, .csv"
+                                        onChange={handleFileUpload}
+                                        disabled={isImporting}
+                                        className="text-xs file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2">支援 Excel 或 CSV 格式。欄位需包含：股票代號、買賣、股數、價格、日期。</p>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
