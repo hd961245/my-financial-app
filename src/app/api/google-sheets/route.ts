@@ -1,17 +1,78 @@
 import { NextResponse } from 'next/server';
+import { google } from 'googleapis';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
-        const spreadsheetId = searchParams.get('sheetId');
+        let spreadsheetId = searchParams.get('sheetId');
 
         if (!spreadsheetId) {
             return NextResponse.json({ error: 'Missing Google Sheet ID' }, { status: 400 });
         }
 
-        // To avoid the "API Key Required" error for public sheets, we can 
+        // Check for Service Account Authentication for PRIVATE sheets
+        const saBase64 = process.env.GOOGLE_SERVICE_ACCOUNT_BASE64;
+
+        if (saBase64 && !spreadsheetId.startsWith('e/')) {
+            try {
+                // Decode base64
+                const credentials = JSON.parse(Buffer.from(saBase64, 'base64').toString('utf-8'));
+
+                // Authorize client
+                const auth = new google.auth.GoogleAuth({
+                    credentials,
+                    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+                });
+
+                const sheets = google.sheets({ version: 'v4', auth });
+
+                // Get the first sheet name to query data
+                const spreadsheet = await sheets.spreadsheets.get({
+                    spreadsheetId,
+                });
+                const firstSheetName = spreadsheet.data.sheets?.[0]?.properties?.title;
+
+                if (!firstSheetName) {
+                    throw new Error("Could not determine sheet tab name.");
+                }
+
+                // Fetch all data from the first sheet
+                const response = await sheets.spreadsheets.values.get({
+                    spreadsheetId,
+                    range: firstSheetName, // Gets all data from A1 onwards
+                });
+
+                const rows = response.data.values;
+                if (!rows || rows.length === 0) {
+                    return NextResponse.json([]);
+                }
+
+                // Convert array of arrays to array of objects
+                const headers = rows[0].map(String);
+                const data = rows.slice(1).map((row, index) => {
+                    const rowData: Record<string, string | number> = { id: String(index) };
+                    headers.forEach((header, colIndex) => {
+                        const cleanHeader = header || `Col${colIndex}`;
+                        rowData[cleanHeader] = row[colIndex] !== undefined ? String(row[colIndex]).trim() : '';
+                    });
+                    return rowData;
+                });
+
+                return NextResponse.json(data);
+
+            } catch (saError: any) {
+                console.error("Service Account Error (falling back to Public CSV):", saError);
+                if (saError.message && saError.message.includes('403')) {
+                    return NextResponse.json({ error: '小助手沒有權限存取。請確認你已將該試算表「共用」給小助手的 Email。' }, { status: 403 });
+                }
+                // Fallthrough to public CSV logic if it fails for other generic reasons
+            }
+        }
+
+        // ============================================
+        // FALLBACK: To avoid the "API Key Required" error for public sheets, we can 
         // use Google Sheets' built-in CSV export endpoint directly.
         // It works for any sheet where "Anyone with the link can view" is enabled.
         let csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
