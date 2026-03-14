@@ -5,9 +5,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, Search, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type SheetItem = Record<string, string | number>;
+
+type AnalysisData = {
+    symbol: string;
+    name: string;
+    price: number;
+    changePercent: number;
+    technical: {
+        trend: string;
+        sma20: number | null;
+        sma60: number | null;
+        rsi: number | null;
+        macd: { MACD?: number, histogram?: number, signal?: number } | null;
+    };
+    news: { title: string; link: string; publisher: string; time: string }[];
+};
 
 export function GoogleSheetsTracker() {
     const [sheetId, setSheetId] = useState("");
@@ -15,6 +31,12 @@ export function GoogleSheetsTracker() {
     const [data, setData] = useState<SheetItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+
+    // Analysis State
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+    const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+    const [analyzing, setAnalyzing] = useState(false);
+    const [analysisError, setAnalysisError] = useState("");
 
     // Load saved Sheet ID from localStorage on mount
     useEffect(() => {
@@ -75,6 +97,27 @@ export function GoogleSheetsTracker() {
     // If we have data, we dynamically extract columns based on the keys of the first row (ignoring 'id')
     const columns = data.length > 0 ? Object.keys(data[0]).filter(k => k !== 'id') : [];
 
+    // Analyze specific symbol
+    const handleAnalyze = async (symbolRaw: string) => {
+        if (!symbolRaw) return;
+        const symbol = String(symbolRaw).trim();
+        setSelectedSymbol(symbol);
+        setAnalysisData(null);
+        setAnalysisError("");
+        setAnalyzing(true);
+
+        try {
+            const res = await fetch(`/api/analyze?symbol=${encodeURIComponent(symbol)}`);
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "Analysis failed");
+            setAnalysisData(json);
+        } catch (err: any) {
+            setAnalysisError(err.message);
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
     return (
         <div className="space-y-4">
             <Card>
@@ -129,6 +172,7 @@ export function GoogleSheetsTracker() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
+                                        <TableHead className="w-[100px]">分析</TableHead>
                                         {columns.map(col => (
                                             <TableHead key={col}>{col}</TableHead>
                                         ))}
@@ -137,6 +181,24 @@ export function GoogleSheetsTracker() {
                                 <TableBody>
                                     {data.map((row) => (
                                         <TableRow key={row.id}>
+                                            <TableCell>
+                                                {/* Looking for a column named '股票代號' or 'Symbol' or the first column as fallback */}
+                                                {(() => {
+                                                    const symbolCol = columns.find(c => c.includes('代號') || c.toLowerCase().includes('symbol')) || columns[0];
+                                                    const symbolValue = row[symbolCol];
+                                                    return (
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-8 gap-1"
+                                                            onClick={() => handleAnalyze(String(symbolValue))}
+                                                        >
+                                                            <Search className="h-3 w-3" />
+                                                            分析
+                                                        </Button>
+                                                    );
+                                                })()}
+                                            </TableCell>
                                             {columns.map(col => {
                                                 const val = row[col];
 
@@ -165,6 +227,116 @@ export function GoogleSheetsTracker() {
                     )}
                 </CardContent>
             </Card>
+
+            <Dialog open={!!selectedSymbol} onOpenChange={(open: boolean) => { if (!open) setSelectedSymbol(null) }}>
+                <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl flex items-center gap-2">
+                            {analysisData ? (
+                                <>
+                                    {analysisData.name} ({analysisData.symbol})
+                                    <span className={`text-base ${analysisData.changePercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                        ${analysisData.price} ({analysisData.changePercent >= 0 ? '+' : ''}{analysisData.changePercent?.toFixed(2)}%)
+                                    </span>
+                                </>
+                            ) : (
+                                `Analyzing ${selectedSymbol}...`
+                            )}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Quant Technical Analysis & Latest News
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {analyzing && (
+                        <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                            <Activity className="h-8 w-8 animate-spin text-primary" />
+                            <p className="text-sm text-muted-foreground">正在計算歷史均線與技術指標...</p>
+                        </div>
+                    )}
+
+                    {!analyzing && analysisError && (
+                        <div className="p-4 bg-red-50 text-red-600 rounded-md border border-red-200">
+                            分析失敗：{analysisError}
+                        </div>
+                    )}
+
+                    {!analyzing && analysisData && (
+                        <div className="grid md:grid-cols-2 gap-4 mt-4">
+                            <div className="space-y-4">
+                                <h3 className="font-bold border-b pb-2 flex items-center gap-2">
+                                    <Activity className="h-4 w-4 text-purple-500" /> 技術指標 (Indicators)
+                                </h3>
+
+                                <Card className="p-4">
+                                    <div className="text-sm text-muted-foreground mb-1">主要趨勢 (Trend)</div>
+                                    <div className={`text-lg font-bold flex items-center gap-2 ${analysisData.technical.trend.includes('Bullish') || analysisData.technical.trend.includes('多頭') ? 'text-green-500' :
+                                        analysisData.technical.trend.includes('Bearish') || analysisData.technical.trend.includes('空頭') ? 'text-red-500' : 'text-yellow-500'
+                                        }`}>
+                                        {analysisData.technical.trend.includes('Bullish') || analysisData.technical.trend.includes('多頭') ? <TrendingUp className="h-5 w-5" /> : null}
+                                        {analysisData.technical.trend.includes('Bearish') || analysisData.technical.trend.includes('空頭') ? <TrendingDown className="h-5 w-5" /> : null}
+                                        {analysisData.technical.trend}
+                                    </div>
+                                </Card>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Card className="p-3">
+                                        <div className="text-xs text-muted-foreground">20日均線 (SMA20)</div>
+                                        <div className="font-bold">{analysisData.technical.sma20 ? `$${analysisData.technical.sma20.toFixed(2)}` : 'N/A'}</div>
+                                    </Card>
+                                    <Card className="p-3">
+                                        <div className="text-xs text-muted-foreground">60日季線 (SMA60)</div>
+                                        <div className="font-bold">{analysisData.technical.sma60 ? `$${analysisData.technical.sma60.toFixed(2)}` : 'N/A'}</div>
+                                    </Card>
+                                </div>
+
+                                <Card className="p-3">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <div className="text-xs text-muted-foreground">RSI (14) - 動能指標</div>
+                                        <div className={`font-bold text-sm ${(analysisData.technical.rsi || 50) > 70 ? 'text-red-500' :
+                                            (analysisData.technical.rsi || 50) < 30 ? 'text-green-500' : ''
+                                            }`}>
+                                            {analysisData.technical.rsi ? analysisData.technical.rsi.toFixed(2) : 'N/A'}
+                                        </div>
+                                    </div>
+                                    <div className="w-full bg-secondary h-2 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full ${(analysisData.technical.rsi || 50) > 70 ? 'bg-red-500' : (analysisData.technical.rsi || 50) < 30 ? 'bg-green-500' : 'bg-primary'}`}
+                                            style={{ width: `${Math.min(Math.max(analysisData.technical.rsi || 0, 0), 100)}%` }}
+                                        />
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground mt-1 text-right">
+                                        {(analysisData.technical.rsi || 50) > 70 ? '超買 (Overbought)' : (analysisData.technical.rsi || 50) < 30 ? '超賣 (Oversold)' : '中性 (Neutral)'}
+                                    </div>
+                                </Card>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h3 className="font-bold border-b pb-2 flex items-center gap-2">
+                                    <Search className="h-4 w-4 text-blue-500" /> 近期重點新聞 (Recent News)
+                                </h3>
+                                <div className="space-y-3">
+                                    {analysisData.news && analysisData.news.length > 0 ? (
+                                        analysisData.news.map((item, idx) => (
+                                            <div key={idx} className="bg-muted/30 p-3 rounded-md">
+                                                <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:underline hover:text-blue-600 line-clamp-2">
+                                                    {item.title}
+                                                </a>
+                                                <div className="text-xs text-muted-foreground mt-1 flex justify-between">
+                                                    <span>{item.publisher}</span>
+                                                    <span>{item.time}</span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-md">無近期新聞</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
