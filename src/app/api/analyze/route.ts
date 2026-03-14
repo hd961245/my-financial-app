@@ -49,6 +49,7 @@ export async function GET(request: Request) {
 
         const historical = await yahooFinance.historical(querySymbol, {
             period1: period1.toISOString().split('T')[0],
+            period2: new Date().toISOString().split('T')[0],
             interval: '1d'
         });
 
