@@ -126,6 +126,7 @@ export default function Home() {
             <TabsTrigger value="stocks">個股健康度</TabsTrigger>
             <TabsTrigger value="portfolio">投資組合</TabsTrigger>
             <TabsTrigger value="custom">自訂資料源</TabsTrigger>
+            <TabsTrigger value="watchlist">自選股清單</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
