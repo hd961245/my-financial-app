@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw, Trash2 } from "lucide-react";
+import { RefreshCcw, Trash2, Wallet } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import * as xlsx from "xlsx";
@@ -48,6 +48,11 @@ export function PortfolioTracker() {
     const [loading, setLoading] = useState(true);
     const [isImporting, setIsImporting] = useState(false);
 
+    // Account state
+    const [account, setAccount] = useState<{ balance: number, totalDeposit: number } | null>(null);
+    const [depositAmount, setDepositAmount] = useState("");
+    const [isSubmittingCash, setIsSubmittingCash] = useState(false);
+
     // Form states
     const [symbol, setSymbol] = useState("");
     const [tradeType, setTradeType] = useState("BUY");
@@ -57,6 +62,16 @@ export function PortfolioTracker() {
     const [categoryId, setCategoryId] = useState<string>("none"); // 'none' means unassigned
 
     const [newCategoryName, setNewCategoryName] = useState("");
+
+    const fetchAccount = async () => {
+        try {
+            const res = await fetch("/api/account");
+            if (res.ok) {
+                const data = await res.json();
+                setAccount(data.account);
+            }
+        } catch (error) { console.error(error); }
+    };
 
     const fetchCategories = async () => {
         try {
@@ -85,12 +100,39 @@ export function PortfolioTracker() {
     };
 
     useEffect(() => {
+        fetchAccount();
         fetchCategories();
         fetchPortfolio();
 
-        const interval = setInterval(fetchPortfolio, 10000);
+        const interval = setInterval(() => {
+            fetchPortfolio();
+            fetchAccount();
+        }, 10000);
         return () => clearInterval(interval);
     }, []);
+
+    const handleCashTransaction = async (action: 'deposit' | 'withdraw') => {
+        if (!depositAmount || isNaN(Number(depositAmount)) || Number(depositAmount) <= 0) return;
+        setIsSubmittingCash(true);
+        try {
+            const res = await fetch("/api/account", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action, amount: Number(depositAmount) })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setDepositAmount("");
+                fetchAccount();
+            } else {
+                alert(data.error || "交易失敗");
+            }
+        } catch (err) {
+            alert("網路錯誤");
+        } finally {
+            setIsSubmittingCash(false);
+        }
+    };
 
     const handleAddTrade = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -108,6 +150,10 @@ export function PortfolioTracker() {
                 setShares("");
                 setPrice("");
                 fetchPortfolio();
+                fetchAccount();
+            } else {
+                const errorData = await res.json();
+                alert(errorData.error || "交易紀錄新增失敗");
             }
         } catch (error) {
             console.error("Failed to add trade:", error);
@@ -212,6 +258,22 @@ export function PortfolioTracker() {
 
     return (
         <div className="space-y-4">
+            {/* Account Overview */}
+            <Card className="mb-4">
+                <CardHeader className="pb-2"><CardTitle className="text-sm font-medium flex items-center"><Wallet className="mr-2 h-4 w-4" /> 模擬帳戶現金 (Paper Trading Cash)</CardTitle></CardHeader>
+                <CardContent className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div className="text-3xl font-bold">${account?.balance?.toFixed(2) || '0.00'}</div>
+                        <div className="text-xs text-muted-foreground mt-1">累積總入金: ${account?.totalDeposit?.toFixed(2) || '0.00'}</div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Input type="number" placeholder="設定金額" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} className="w-[120px]" />
+                        <Button variant="secondary" onClick={() => handleCashTransaction('deposit')} disabled={isSubmittingCash}>入金 (Deposit)</Button>
+                        <Button variant="outline" onClick={() => handleCashTransaction('withdraw')} disabled={isSubmittingCash}>提款 (Withdraw)</Button>
+                    </div>
+                </CardContent>
+            </Card>
+
             {/* Metrics */}
             <div className="grid gap-4 md:grid-cols-4">
                 <Card>
