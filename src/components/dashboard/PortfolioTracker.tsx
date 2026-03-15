@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw } from "lucide-react";
+import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw, LineChart } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StockChart } from "./StockChart";
 import { format } from "date-fns";
 import * as xlsx from "xlsx";
 
@@ -75,6 +76,10 @@ export function PortfolioTracker() {
 
     // Sync state
     const [isSyncingWatchlist, setIsSyncingWatchlist] = useState(false);
+
+    // Chart Modal state
+    const [chartModalOpen, setChartModalOpen] = useState(false);
+    const [selectedChartSymbol, setSelectedChartSymbol] = useState("");
 
     const [newCategoryName, setNewCategoryName] = useState("");
 
@@ -335,6 +340,11 @@ export function PortfolioTracker() {
         }
     };
 
+    const handleViewChart = (symbol: string) => {
+        setSelectedChartSymbol(symbol);
+        setChartModalOpen(true);
+    };
+
     return (
         <div className="space-y-4">
             {/* Account Overview */}
@@ -502,6 +512,7 @@ export function PortfolioTracker() {
                                                         <TableHead>平均成本</TableHead>
                                                         <TableHead>目前市價</TableHead>
                                                         <TableHead className="text-right">未實現損益</TableHead>
+                                                        <TableHead className="text-right w-24">操作</TableHead>
                                                     </TableRow>
                                                 </TableHeader>
                                                 <TableBody>
@@ -516,6 +527,11 @@ export function PortfolioTracker() {
                                                                 <TableCell>{quote ? `$${quote.regularMarketPrice.toFixed(2)}` : '...'}</TableCell>
                                                                 <TableCell className={`text-right ${pnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                                                                     {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} ({pnl >= 0 ? '+' : ''}{percent.toFixed(2)}%)
+                                                                </TableCell>
+                                                                <TableCell className="text-right">
+                                                                    <Button variant="ghost" size="icon" onClick={() => handleViewChart(item.symbol)} title="看走勢圖">
+                                                                        <LineChart className="h-4 w-4 text-blue-600" />
+                                                                    </Button>
                                                                 </TableCell>
                                                             </TableRow>
                                                         )
@@ -565,7 +581,7 @@ export function PortfolioTracker() {
                                             <TableHead>股票代號</TableHead>
                                             <TableHead>目前市價</TableHead>
                                             <TableHead>所屬分類</TableHead>
-                                            <TableHead className="text-right">AI 買入評估</TableHead>
+                                            <TableHead className="text-right">操作與捷徑</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
@@ -576,7 +592,10 @@ export function PortfolioTracker() {
                                                     <TableCell className="font-medium">{item.symbol}</TableCell>
                                                     <TableCell>{quote ? `$${quote.regularMarketPrice.toFixed(2)}` : '...'}</TableCell>
                                                     <TableCell>{item.categoryName}</TableCell>
-                                                    <TableCell className="text-right">
+                                                    <TableCell className="text-right flex items-center justify-end gap-2">
+                                                        <Button variant="ghost" size="icon" onClick={() => handleViewChart(item.symbol)} title="看走勢圖">
+                                                            <LineChart className="h-4 w-4 text-blue-600" />
+                                                        </Button>
                                                         <Button variant="outline" size="sm" onClick={() => handleRecommend(item.symbol, item.symbol)}>
                                                             <Bot className="h-4 w-4 mr-2 text-purple-600" />
                                                             分析
@@ -700,6 +719,23 @@ export function PortfolioTracker() {
                                     {watchlistReportContent}
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Historical Chart Modal */}
+            {chartModalOpen && selectedChartSymbol && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-4xl rounded-xl shadow-xl overflow-hidden">
+                        <div className="p-4 border-b flex justify-between items-center bg-muted/30">
+                            <h3 className="font-bold flex items-center gap-2 text-lg text-blue-700">
+                                <LineChart className="h-5 w-5" /> 歷史走勢圖 - {selectedChartSymbol}
+                            </h3>
+                            <Button variant="ghost" size="icon" onClick={() => setChartModalOpen(false)}>✕</Button>
+                        </div>
+                        <div className="p-6">
+                            <StockChart symbol={selectedChartSymbol} />
                         </div>
                     </div>
                 </div>
