@@ -68,3 +68,11 @@ model AccountTransaction {
   notes      String?
   createdAt  DateTime @default(now())
 }
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+

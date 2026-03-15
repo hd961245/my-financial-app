@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw, Search, TrendingUp, TrendingDown, Activity } from "lucide-react";
+import { RefreshCcw, Search, TrendingUp, TrendingDown, Activity, Bot, Plus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type SheetItem = Record<string, string | number>;
@@ -38,13 +38,37 @@ export function GoogleSheetsTracker() {
     const [analyzing, setAnalyzing] = useState(false);
     const [analysisError, setAnalysisError] = useState("");
 
-    // Load saved Sheet ID from localStorage on mount
+    // Weekly Report State
+    const [reportModalOpen, setReportModalOpen] = useState(false);
+    const [generatingReport, setGeneratingReport] = useState(false);
+    const [weeklyReport, setWeeklyReport] = useState("");
+    const [reportError, setReportError] = useState("");
+
+    // Add Trade State
+    const [addTradeOpen, setAddTradeOpen] = useState(false);
+    const [tradeSymbol, setTradeSymbol] = useState("");
+    const [tradeAction, setTradeAction] = useState("WATCH"); // "WATCH" or "BUY"
+    const [tradeShares, setTradeShares] = useState("");
+    const [tradePrice, setTradePrice] = useState("");
+    const [isSubmittingTrade, setIsSubmittingTrade] = useState(false);
+
+    // Load saved Sheet ID from database on mount
     useEffect(() => {
-        const storedId = localStorage.getItem("googleSheetId");
-        if (storedId) {
-            setSheetId(storedId);
-            setSavedSheetId(storedId);
-        }
+        const fetchInitialSetting = async () => {
+            try {
+                const res = await fetch("/api/settings?key=GOOGLE_SHEET_ID");
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.value) {
+                        setSheetId(data.value);
+                        setSavedSheetId(data.value);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load global sheet ID:", err);
+            }
+        };
+        fetchInitialSetting();
     }, []);
 
     // Fetch data when we have a saved ID
@@ -77,7 +101,7 @@ export function GoogleSheetsTracker() {
         return () => clearInterval(intervalId);
     }, [savedSheetId]);
 
-    const handleSaveAndFetch = () => {
+    const handleSaveAndFetch = async () => {
         if (!sheetId.trim()) return;
 
         // Extract ID if user pasted full URL
@@ -90,8 +114,19 @@ export function GoogleSheetsTracker() {
         }
 
         setSheetId(finalId);
-        setSavedSheetId(finalId);
-        localStorage.setItem("googleSheetId", finalId);
+
+        // Save globally to database
+        try {
+            await fetch("/api/google-sheets", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sheetId: finalId })
+            });
+            // Update saved state to trigger data fetch
+            setSavedSheetId(finalId);
+        } catch (err) {
+            console.error("Failed to save Sheet ID:", err);
+        }
     };
 
     // If we have data, we dynamically extract columns based on the keys of the first row (ignoring 'id')
@@ -115,6 +150,68 @@ export function GoogleSheetsTracker() {
             setAnalysisError(err.message);
         } finally {
             setAnalyzing(false);
+        }
+    };
+
+    // Generate Weekly AI Report
+    const handleGenerateReport = async () => {
+        setReportModalOpen(true);
+        setGeneratingReport(true);
+        setWeeklyReport("");
+        setReportError("");
+
+        try {
+            const res = await fetch("/api/cron/weekly-report");
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "生成失敗");
+            setWeeklyReport(json.summaryReport);
+        } catch (err: any) {
+            setReportError(err.message);
+        } finally {
+            setGeneratingReport(false);
+        }
+    };
+
+    const handleOpenAddTrade = (symbolRaw: string) => {
+        setTradeSymbol(String(symbolRaw).trim());
+        setTradeAction("WATCH");
+        setTradeShares("");
+        setTradePrice("");
+        setAddTradeOpen(true);
+    };
+
+    const handleSubmitTrade = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setIsSubmittingTrade(true);
+        try {
+            const actualShares = tradeAction === "WATCH" ? 0 : Number(tradeShares);
+            const actualPrice = tradeAction === "WATCH" ? 0 : Number(tradePrice);
+            const date = new Date().toISOString().split('T')[0];
+
+            const res = await fetch("/api/portfolio", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    symbol: tradeSymbol,
+                    type: "BUY", // Always register as a BUY action conceptually for adding logic
+                    shares: actualShares,
+                    price: actualPrice,
+                    date,
+                    categoryId: null
+                }),
+            });
+
+            if (res.ok) {
+                setAddTradeOpen(false);
+                alert(`${tradeSymbol} 已成功加入投資組合！`);
+            } else {
+                const json = await res.json();
+                alert(json.error || "新增失敗");
+            }
+        } catch (err) {
+            alert("新增失敗，網路錯誤");
+        } finally {
+            setIsSubmittingTrade(false);
         }
     };
 
@@ -157,9 +254,15 @@ export function GoogleSheetsTracker() {
                 <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle>自選股清單 (Watchlist)</CardTitle>
                     {savedSheetId && (
-                        <Button variant="outline" size="icon" onClick={() => setSavedSheetId(savedSheetId)} disabled={loading}>
-                            <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="default" className="bg-purple-600 hover:bg-purple-700 text-white" onClick={handleGenerateReport}>
+                                <Bot className="h-4 w-4 mr-2" />
+                                產生每週 AI 健檢報告
+                            </Button>
+                            <Button variant="outline" size="icon" onClick={() => setSavedSheetId(savedSheetId)} disabled={loading}>
+                                <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                            </Button>
+                        </div>
                     )}
                 </CardHeader>
                 <CardContent>
@@ -187,15 +290,27 @@ export function GoogleSheetsTracker() {
                                                     const symbolCol = columns.find(c => c.includes('代號') || c.toLowerCase().includes('symbol')) || columns[0];
                                                     const symbolValue = row[symbolCol];
                                                     return (
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="h-8 gap-1"
-                                                            onClick={() => handleAnalyze(String(symbolValue))}
-                                                        >
-                                                            <Search className="h-3 w-3" />
-                                                            分析
-                                                        </Button>
+                                                        <div className="flex gap-1">
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 gap-1"
+                                                                onClick={() => handleAnalyze(String(symbolValue))}
+                                                            >
+                                                                <Search className="h-3 w-3" />
+                                                                分析
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 gap-1 text-blue-600 hover:text-blue-700"
+                                                                onClick={() => handleOpenAddTrade(String(symbolValue))}
+                                                                title="加入投資組合表單"
+                                                            >
+                                                                <Plus className="h-3 w-3" />
+                                                                加入
+                                                            </Button>
+                                                        </div>
                                                     );
                                                 })()}
                                             </TableCell>
@@ -335,6 +450,114 @@ export function GoogleSheetsTracker() {
                             </div>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* AI Weekly Report Modal */}
+            <Dialog open={reportModalOpen} onOpenChange={setReportModalOpen}>
+                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl flex items-center gap-2 text-purple-700">
+                            <Bot className="h-6 w-6" />
+                            自選股每週 AI 健檢報告 (BETA)
+                        </DialogTitle>
+                        <DialogDescription>
+                            AI 已經掃描了你的試算表持股，並運用量化技術指標與最新新聞為您生成這份總結報告。
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {generatingReport ? (
+                        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                            <Activity className="h-10 w-10 animate-spin text-purple-600" />
+                            <p className="text-lg text-muted-foreground animate-pulse">正在為您統整每週財務報告，請稍候...</p>
+                        </div>
+                    ) : reportError ? (
+                        <div className="p-4 bg-red-50 text-red-600 rounded-md border border-red-200">
+                            ⚠️ 錯誤：{reportError}
+                        </div>
+                    ) : (
+                        <div className="p-6 bg-slate-50 rounded-lg border border-slate-200 shadow-inner">
+                            <div className="prose prose-slate max-w-none text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                                {weeklyReport}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Quick Add Trade Modal */}
+            <Dialog open={addTradeOpen} onOpenChange={setAddTradeOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>加入投資組合作業</DialogTitle>
+                        <DialogDescription>
+                            將 <b>{tradeSymbol}</b> 新增至您的個股表單內。
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <form onSubmit={handleSubmitTrade} className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">動作類型</label>
+                            <div className="flex gap-4">
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="radio"
+                                        name="tradeAction"
+                                        value="WATCH"
+                                        checked={tradeAction === "WATCH"}
+                                        onChange={() => setTradeAction("WATCH")}
+                                    />
+                                    純加入觀察 (0 股)
+                                </label>
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="radio"
+                                        name="tradeAction"
+                                        value="BUY"
+                                        checked={tradeAction === "BUY"}
+                                        onChange={() => setTradeAction("BUY")}
+                                    />
+                                    實際買入記錄
+                                </label>
+                            </div>
+                        </div>
+
+                        {tradeAction === "BUY" && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">買入股數 (Shares)</label>
+                                    <Input
+                                        type="number"
+                                        placeholder="例如: 100"
+                                        value={tradeShares}
+                                        onChange={(e) => setTradeShares(e.target.value)}
+                                        min="0.01"
+                                        step="0.01"
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">成交單價 (Price)</label>
+                                    <Input
+                                        type="number"
+                                        placeholder="例如: 150.5"
+                                        value={tradePrice}
+                                        onChange={(e) => setTradePrice(e.target.value)}
+                                        min="0"
+                                        step="0.0001"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-2 pt-4">
+                            <Button variant="outline" type="button" onClick={() => setAddTradeOpen(false)}>取消</Button>
+                            <Button type="submit" disabled={isSubmittingTrade}>
+                                {isSubmittingTrade ? "處理中..." : "確認加入"}
+                            </Button>
+                        </div>
+                    </form>
                 </DialogContent>
             </Dialog>
         </div>
