@@ -16,12 +16,16 @@ model Trade {
   price      Float    // Price per share
   currency   String   @default("TWD") // E.g., 'TWD', 'USD'
   date       DateTime @default(now()) // Custom Trade Date
-  categoryId String?  
+  categoryId String?
   category   PortfolioCategory? @relation(fields: [categoryId], references: [id])
   accountId  String?  // Optional for backward compatibility but required for paper trading
   account    Account? @relation(fields: [accountId], references: [id])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@index([symbol])
+  @@index([date])
+  @@index([categoryId])
 }
 
 model PortfolioCategory {
@@ -34,7 +38,7 @@ model PortfolioCategory {
 model DataSource {
   id        String   @id @default(cuid())
   name      String
-  url       String
+  url       String   @unique
   type      String   // 'RSS' or 'HTML'
   createdAt DateTime @default(now())
 }
@@ -67,6 +71,8 @@ model AccountTransaction {
   amount     Float    // Positive for deposit/sell, negative for withdrawal/buy
   notes      String?
   createdAt  DateTime @default(now())
+
+  @@index([accountId])
 }
 
 model SystemSetting {

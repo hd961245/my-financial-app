@@ -75,22 +75,27 @@ export async function GET() {
             groupedHoldings[h.categoryName].push(h);
         });
 
-        // Fetch live quotes for active unique symbols (including watchlist)
+        // Fetch live quotes for active unique symbols (including watchlist) in parallel
         const uniqueSymbols = Array.from(new Set([...flatHoldings, ...watchlistHoldings].map(h => h.symbol)));
-        const quotes: Record<string, { regularMarketPrice: number, regularMarketChangePercent: number }> = {};
-        for (const sym of uniqueSymbols) {
-            try {
-                const quote = await yahooFinance.quote(sym);
-                if (quote) {
-                    quotes[sym] = {
-                        regularMarketPrice: quote.regularMarketPrice || 0,
-                        regularMarketChangePercent: quote.regularMarketChangePercent || 0,
-                    };
+        const quoteEntries = await Promise.all(
+            uniqueSymbols.map(async (sym) => {
+                try {
+                    const quote = await yahooFinance.quote(sym);
+                    if (quote) {
+                        return [sym, {
+                            regularMarketPrice: quote.regularMarketPrice || 0,
+                            regularMarketChangePercent: quote.regularMarketChangePercent || 0,
+                        }] as const;
+                    }
+                } catch (e) {
+                    console.error(`Failed to fetch quote in portfolio backend for ${sym}:`, e);
                 }
-            } catch (e) {
-                console.error(`Failed to fetch quote in portfolio backend for ${sym}:`, e);
-            }
-        }
+                return null;
+            })
+        );
+        const quotes: Record<string, { regularMarketPrice: number, regularMarketChangePercent: number }> = Object.fromEntries(
+            quoteEntries.filter((e): e is [string, { regularMarketPrice: number, regularMarketChangePercent: number }] => e !== null)
+        );
 
         return NextResponse.json({
             holdings: groupedHoldings, // Now sending grouped object
@@ -178,6 +183,7 @@ export async function POST(request: Request) {
 
         // Handle batch insert (e.g. initial setup) - We simply write fields directly and add cash if they were BUYs to prevent negative balances if not handled.
         // For simplicity now, let's just insert them directly without full ledger accounting to not break their existing imports
+        const VALID_TYPES = ['BUY', 'SELL', 'WATCH'];
         const batchData = body.map((row: any) => ({
             symbol: String(row.symbol).toUpperCase(),
             type: String(row.type).toUpperCase(),
@@ -186,7 +192,12 @@ export async function POST(request: Request) {
             date: row.date ? new Date(row.date) : new Date(),
             categoryId: row.categoryId || null,
             accountId: account!.id
-        })).filter(r => r.symbol && !isNaN(r.shares) && !isNaN(r.price));
+        })).filter(r =>
+            r.symbol &&
+            VALID_TYPES.includes(r.type) &&
+            !isNaN(r.shares) && r.shares > 0 &&
+            !isNaN(r.price) && r.price >= 0
+        );
 
         if (batchData.length === 0) {
             return NextResponse.json({ error: 'No valid trades to insert' }, { status: 400 });

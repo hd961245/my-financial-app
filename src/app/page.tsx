@@ -15,16 +15,45 @@ import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, 
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
+interface QuoteData {
+  regularMarketPrice: number;
+  regularMarketChangePercent: number;
+  displayName?: string;
+  symbol?: string;
+}
+
+interface NewsItem {
+  title: string;
+  link: string;
+  publisher: string;
+  providerPublishTime: number;
+  thumbnail: { resolutions?: { url: string }[] } | null;
+}
+
+interface CustomFeedItem {
+  title: string;
+  link: string;
+  pubDate: string;
+  sourceName: string;
+  sourceType: string;
+  thumbnail?: string;
+}
+
+interface AllocationItem {
+  name: string;
+  value: number;
+}
+
 export default function Home() {
-  const [indices, setIndices] = useState<Record<string, any>>({});
-  const [news, setNews] = useState<any[]>([]);
-  const [customNews, setCustomNews] = useState<any[]>([]);
-  const [allocation, setAllocation] = useState<any[]>([]);
+  const [indices, setIndices] = useState<Record<string, QuoteData>>({});
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [customNews, setCustomNews] = useState<CustomFeedItem[]>([]);
+  const [allocation, setAllocation] = useState<AllocationItem[]>([]);
 
   useEffect(() => {
     const fetchIndices = async () => {
       const symbols = ["^GSPC", "^TWII", "^IXIC", "TWD=X"];
-      const data: Record<string, any> = {};
+      const data: Record<string, QuoteData> = {};
       for (const sym of symbols) {
         try {
           const res = await fetch(`/api/quote?symbol=${sym}`);
@@ -56,8 +85,8 @@ export default function Home() {
           const grouped = portData.holdings || {};
           const quotes = portData.quotes || {};
 
-          const newAlloc = Object.entries(grouped).map(([catName, items]: [string, any]) => {
-            const value = items.reduce((acc: number, item: any) => {
+          const newAlloc = Object.entries(grouped).map(([catName, items]) => {
+            const value = (items as { symbol: string; shares: number; price: number }[]).reduce((acc, item) => {
               const currentPrice = quotes[item.symbol]?.regularMarketPrice || item.price;
               return acc + (item.shares * currentPrice);
             }, 0);
@@ -162,7 +191,7 @@ export default function Home() {
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: any) => typeof value === 'number' ? `$${value.toFixed(2)}` : value} />
+                        <Tooltip formatter={(value: number | string) => typeof value === 'number' ? `$${value.toFixed(2)}` : value} />
                         <Legend />
                       </RechartsPieChart>
                     </ResponsiveContainer>
