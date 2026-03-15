@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw, LineChart } from "lucide-react";
+import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StockChart } from "./StockChart";
 import { format } from "date-fns";
@@ -51,9 +52,14 @@ export function PortfolioTracker() {
     const [isImporting, setIsImporting] = useState(false);
 
     // Account state
-    const [account, setAccount] = useState<{ balance: number, totalDeposit: number } | null>(null);
+    const [account, setAccount] = useState<{ id: string; name: string; balance: number; totalDeposit: number; accountType: string } | null>(null);
+    const [allAccounts, setAllAccounts] = useState<{ id: string; name: string; accountType: string }[]>([]);
     const [depositAmount, setDepositAmount] = useState("");
     const [isSubmittingCash, setIsSubmittingCash] = useState(false);
+    const [newAccountName, setNewAccountName] = useState("");
+    const [newAccountType, setNewAccountType] = useState("PAPER");
+    const [isCreatingAccount, setIsCreatingAccount] = useState(false);
+    const [showNewAccountForm, setShowNewAccountForm] = useState(false);
 
     // Form states
     const [symbol, setSymbol] = useState("");
@@ -81,6 +87,10 @@ export function PortfolioTracker() {
     const [chartModalOpen, setChartModalOpen] = useState(false);
     const [selectedChartSymbol, setSelectedChartSymbol] = useState("");
 
+    // Net Worth history
+    const [netWorthHistory, setNetWorthHistory] = useState<{ date: string; totalValue: number }[]>([]);
+    const [showNetWorthChart, setShowNetWorthChart] = useState(false);
+
     const [newCategoryName, setNewCategoryName] = useState("");
 
     const fetchAccount = async () => {
@@ -89,8 +99,36 @@ export function PortfolioTracker() {
             if (res.ok) {
                 const data = await res.json();
                 setAccount(data.account);
+                setAllAccounts(data.accounts || []);
             }
         } catch (error) { console.error(error); }
+    };
+
+    const handleCreateAccount = async () => {
+        if (!newAccountName.trim()) return;
+        setIsCreatingAccount(true);
+        try {
+            const res = await fetch("/api/account", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: 'create', name: newAccountName.trim(), accountType: newAccountType })
+            });
+            if (res.ok) {
+                setNewAccountName("");
+                setShowNewAccountForm(false);
+                fetchAccount();
+            }
+        } catch { /* ignore */ } finally {
+            setIsCreatingAccount(false);
+        }
+    };
+
+    const handleSwitchAccount = (id: string) => {
+        const found = allAccounts.find(a => a.id === id);
+        if (found && account) {
+            // Optimistically set name/type; full data will come from next fetch
+            setAccount({ ...account, id: found.id, name: found.name, accountType: found.accountType });
+        }
     };
 
     const fetchCategories = async () => {
@@ -100,6 +138,24 @@ export function PortfolioTracker() {
         } catch (error) {
             console.error(error);
         }
+    };
+
+    const fetchNetWorthHistory = async () => {
+        try {
+            const res = await fetch('/api/net-worth');
+            if (res.ok) setNetWorthHistory(await res.json());
+        } catch { /* ignore */ }
+    };
+
+    const saveNetWorthSnapshot = async (totalValue: number) => {
+        try {
+            await fetch('/api/net-worth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ totalValue }),
+            });
+            fetchNetWorthHistory();
+        } catch { /* ignore */ }
     };
 
     const fetchPortfolio = async () => {
@@ -124,6 +180,7 @@ export function PortfolioTracker() {
         fetchAccount();
         fetchCategories();
         fetchPortfolio();
+        fetchNetWorthHistory();
 
         const interval = setInterval(() => {
             fetchPortfolio();
@@ -277,6 +334,14 @@ export function PortfolioTracker() {
     const totalValue = flatHoldings.reduce((acc, item) => acc + calculateUnrealizedPnL(item).currentVal, 0);
     const totalProfit = totalUnrealizedPnL + realizedPnL;
 
+    // Auto-snapshot net worth once per day when portfolio loads with data
+    useEffect(() => {
+        if (totalValue > 0 && !loading) {
+            saveNetWorthSnapshot(totalValue + (account?.balance ?? 0));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading]);
+
     const handleRecommend = async (symbol: string, name?: string) => {
         setRecommendModalOpen(true);
         setIsRecommending(true);
@@ -349,17 +414,57 @@ export function PortfolioTracker() {
         <div className="space-y-4">
             {/* Account Overview */}
             <Card className="mb-4">
-                <CardHeader className="pb-2"><CardTitle className="text-sm font-medium flex items-center"><Wallet className="mr-2 h-4 w-4" /> 模擬帳戶現金 (Paper Trading Cash)</CardTitle></CardHeader>
-                <CardContent className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <div className="text-3xl font-bold">${account?.balance?.toFixed(2) || '0.00'}</div>
-                        <div className="text-xs text-muted-foreground mt-1">累積總入金: ${account?.totalDeposit?.toFixed(2) || '0.00'}</div>
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                            <Wallet className="h-4 w-4" />
+                            {account?.name || '帳戶'}
+                            {account?.accountType === 'REAL'
+                                ? <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full font-normal">📊 記錄模式</span>
+                                : <span className="text-xs bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 px-2 py-0.5 rounded-full font-normal">🎮 模擬模式</span>
+                            }
+                        </span>
+                        {allAccounts.length > 1 && (
+                            <select
+                                value={account?.id || ''}
+                                onChange={e => handleSwitchAccount(e.target.value)}
+                                className="text-xs border rounded px-2 py-1 bg-background"
+                            >
+                                {allAccounts.map(a => (
+                                    <option key={a.id} value={a.id}>{a.name} ({a.accountType === 'REAL' ? '記錄' : '模擬'})</option>
+                                ))}
+                            </select>
+                        )}
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <div className="text-3xl font-bold">${account?.balance?.toFixed(2) || '0.00'}</div>
+                            <div className="text-xs text-muted-foreground mt-1">累積總入金: ${account?.totalDeposit?.toFixed(2) || '0.00'}</div>
+                        </div>
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+                            <Input type="number" placeholder="設定金額" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} className="w-[120px]" />
+                            <Button variant="secondary" onClick={() => handleCashTransaction('deposit')} disabled={isSubmittingCash}>入金 (Deposit)</Button>
+                            <Button variant="outline" onClick={() => handleCashTransaction('withdraw')} disabled={isSubmittingCash}>提款 (Withdraw)</Button>
+                            <Button variant="ghost" size="sm" onClick={() => setShowNewAccountForm(v => !v)} className="text-xs">+ 新帳戶</Button>
+                        </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                        <Input type="number" placeholder="設定金額" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} className="w-[120px]" />
-                        <Button variant="secondary" onClick={() => handleCashTransaction('deposit')} disabled={isSubmittingCash}>入金 (Deposit)</Button>
-                        <Button variant="outline" onClick={() => handleCashTransaction('withdraw')} disabled={isSubmittingCash}>提款 (Withdraw)</Button>
-                    </div>
+                    {showNewAccountForm && (
+                        <div className="flex items-center gap-2 pt-2 border-t">
+                            <Input placeholder="帳戶名稱" value={newAccountName} onChange={e => setNewAccountName(e.target.value)} className="w-40" />
+                            <select
+                                value={newAccountType}
+                                onChange={e => setNewAccountType(e.target.value)}
+                                className="text-sm border rounded px-2 py-1.5 bg-background"
+                            >
+                                <option value="PAPER">🎮 模擬帳戶</option>
+                                <option value="REAL">📊 真實記錄</option>
+                            </select>
+                            <Button size="sm" onClick={handleCreateAccount} disabled={isCreatingAccount || !newAccountName.trim()}>建立</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setShowNewAccountForm(false)}>取消</Button>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
@@ -394,6 +499,35 @@ export function PortfolioTracker() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Net Worth History Chart */}
+            {netWorthHistory.length > 1 && (
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium flex items-center justify-between">
+                            <span className="flex items-center gap-2"><LineChart className="h-4 w-4" /> 淨值歷史走勢</span>
+                            <Button variant="ghost" size="sm" onClick={() => setShowNetWorthChart(v => !v)} className="text-xs">
+                                {showNetWorthChart ? '收起' : '展開'}
+                            </Button>
+                        </CardTitle>
+                    </CardHeader>
+                    {showNetWorthChart && (
+                        <CardContent>
+                            <div className="h-48">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RechartsLineChart data={netWorthHistory}>
+                                        <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                                        <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d.slice(5)} interval="preserveStartEnd" />
+                                        <YAxis tick={{ fontSize: 11 }} width={60} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                                        <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '淨值']} labelFormatter={d => `日期：${d}`} />
+                                        <Line type="monotone" dataKey="totalValue" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                                    </RechartsLineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </CardContent>
+                    )}
+                </Card>
+            )}
 
             <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
                 {/* Left Column Forms */}

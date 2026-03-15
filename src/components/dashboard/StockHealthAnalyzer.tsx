@@ -4,13 +4,18 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Search, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export function StockHealthAnalyzer() {
     const [query, setQuery] = useState("");
     const [loading, setLoading] = useState(false);
     const [stockData, setStockData] = useState<any>(null);
+    const [financialData, setFinancialData] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
+
+    const isTaiwanStock = (sym: string) => sym.endsWith('.TW') || sym.endsWith('.TWO') || /^\d{4,6}$/.test(sym);
 
     // Auto-refresh the currently viewed stock every 10 seconds
     useEffect(() => {
@@ -50,6 +55,19 @@ export function StockHealthAnalyzer() {
 
             const data = await res.json();
             setStockData(data);
+
+            // Fetch Taiwan financials if applicable
+            if (isTaiwanStock(query)) {
+                setFinancialData(null);
+                try {
+                    const finRes = await fetch(`/api/financials?symbol=${query}`);
+                    if (finRes.ok) setFinancialData(await finRes.json());
+                } catch {
+                    // Silently fail - financials are supplementary
+                }
+            } else {
+                setFinancialData(null);
+            }
         } catch (err) {
             setError("取得資料時發生錯誤，請稍後再試。");
         } finally {
@@ -102,6 +120,7 @@ export function StockHealthAnalyzer() {
             </Card>
 
             {stockData && !error && (
+                <>
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                     {/* Header Summary */}
                     <Card className="md:col-span-2 lg:col-span-4">
@@ -215,6 +234,93 @@ export function StockHealthAnalyzer() {
                         </Card>
                     </div>
                 </div>
+
+                {/* Taiwan Stock Financials — only shown for .TW stocks */}
+                {financialData && (
+                    <Card className="mt-4">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                台股財報概況
+                                <Badge variant="secondary">FinMind</Badge>
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {/* Balance KPIs */}
+                            <div className="flex gap-3 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground">負債比率</span>
+                                    <Badge variant={financialData.balance.debtRatio > 60 ? 'destructive' : 'default'}>
+                                        {financialData.balance.debtRatio > 0 ? `${financialData.balance.debtRatio}%` : '---'}
+                                    </Badge>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground">ROE</span>
+                                    <Badge variant={financialData.balance.roe > 15 ? 'default' : 'secondary'}>
+                                        {financialData.balance.roe > 0 ? `${financialData.balance.roe}%` : '---'}
+                                    </Badge>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground">流動比率</span>
+                                    <Badge variant={financialData.balance.currentRatio >= 2 ? 'default' : 'secondary'}>
+                                        {financialData.balance.currentRatio > 0 ? financialData.balance.currentRatio : '---'}
+                                    </Badge>
+                                </div>
+                            </div>
+
+                            {/* EPS Bar Chart */}
+                            {financialData.income && financialData.income.length > 0 && (
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-2">近季 EPS（元）</p>
+                                    <div className="h-40">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={financialData.income} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                                                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(2)} />
+                                                <YAxis tick={{ fontSize: 10 }} width={35} />
+                                                <Tooltip formatter={(v: number) => [`$${v}`, 'EPS']} labelFormatter={d => `季度：${d}`} />
+                                                <Bar dataKey="eps" radius={[3, 3, 0, 0]}>
+                                                    {financialData.income.map((entry: any, idx: number) => (
+                                                        <Cell key={idx} fill={entry.eps >= 0 ? '#10b981' : '#ef4444'} />
+                                                    ))}
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Dividend History */}
+                            {financialData.dividends && financialData.dividends.length > 0 && (
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-2">歷年股利</p>
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr className="border-b text-muted-foreground">
+                                                <th className="text-left py-1 pr-3">年度</th>
+                                                <th className="text-right py-1 pr-3">現金股利（元）</th>
+                                                <th className="text-right py-1">股票股利（元）</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {financialData.dividends.map((d: any) => (
+                                                <tr key={d.year} className="border-b last:border-0">
+                                                    <td className="py-1 pr-3">{d.year}</td>
+                                                    <td className="py-1 pr-3 text-right font-mono text-green-600 dark:text-green-400">{d.cashDividend > 0 ? d.cashDividend : '—'}</td>
+                                                    <td className="py-1 text-right font-mono">{d.stockDividend > 0 ? d.stockDividend : '—'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {financialData.income?.length === 0 && financialData.dividends?.length === 0 && (
+                                <p className="text-sm text-muted-foreground">FinMind 目前無此股票財報資料</p>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+                </>
             )}
         </div>
     );

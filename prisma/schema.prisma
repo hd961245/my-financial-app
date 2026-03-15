@@ -55,6 +55,7 @@ model Account {
   id           String   @id @default(cuid())
   name         String   @default("Default Account")
   currency     String   @default("TWD")
+  accountType  String   @default("PAPER") // 'PAPER' (simulated) | 'REAL' (record-only)
   balance      Float    @default(0) // Current available cash
   totalDeposit Float    @default(0) // Total historically deposited
   createdAt    DateTime @default(now())

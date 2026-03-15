@@ -134,8 +134,8 @@ export async function POST(request: Request) {
             const tradeType = String(type).toUpperCase();
             const totalValue = Number(shares) * Number(price);
 
-            // 2. Prevent over-purchasing logic
-            if (tradeType === 'BUY' && account.balance < totalValue) {
+            // 2. Prevent over-purchasing logic (PAPER accounts only)
+            if (tradeType === 'BUY' && account.accountType !== 'REAL' && account.balance < totalValue) {
                 return NextResponse.json({ error: `餘額不足！需要 ${totalValue.toFixed(2)}，但目前帳戶餘額僅有 ${account.balance.toFixed(2)}` }, { status: 400 });
             }
 
