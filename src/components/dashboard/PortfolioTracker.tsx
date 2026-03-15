@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw, Trash2, Wallet, Bot, Activity } from "lucide-react";
+import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import * as xlsx from "xlsx";
@@ -72,6 +72,9 @@ export function PortfolioTracker() {
     const [watchlistReportOpen, setWatchlistReportOpen] = useState(false);
     const [isGeneratingWatchlistReport, setIsGeneratingWatchlistReport] = useState(false);
     const [watchlistReportContent, setWatchlistReportContent] = useState("");
+
+    // Sync state
+    const [isSyncingWatchlist, setIsSyncingWatchlist] = useState(false);
 
     const [newCategoryName, setNewCategoryName] = useState("");
 
@@ -314,6 +317,24 @@ export function PortfolioTracker() {
         }
     };
 
+    const handleSyncWatchlist = async () => {
+        setIsSyncingWatchlist(true);
+        try {
+            const res = await fetch("/api/analyze/sync-watchlist", {
+                method: "POST"
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "同步失敗");
+            alert(data.message || "同步成功！");
+            // Refresh dashboard data
+            await fetchAccount();
+        } catch (err: any) {
+            alert(`同步發生錯誤: ${err.message}`);
+        } finally {
+            setIsSyncingWatchlist(false);
+        }
+    };
+
     return (
         <div className="space-y-4">
             {/* Account Overview */}
@@ -512,7 +533,18 @@ export function PortfolioTracker() {
                 {/* Left/Right spanning Watchlist section (optional grid stretch later if needed) */}
                 <Card className="md:col-span-2">
                     <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle>觀察清單 (Watchlist - 0 股)</CardTitle>
+                        <div className="flex items-center gap-4">
+                            <CardTitle>觀察清單 (Watchlist - 0 股)</CardTitle>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleSyncWatchlist}
+                                disabled={isSyncingWatchlist}
+                            >
+                                <RefreshCw className={`h-4 w-4 mr-2 ${isSyncingWatchlist ? 'animate-spin' : ''}`} />
+                                {isSyncingWatchlist ? '同步中...' : '從 Google 試算表同步'}
+                            </Button>
+                        </div>
                         <Button
                             onClick={handleGenerateWatchlistReport}
                             disabled={watchlistHoldings.length === 0}

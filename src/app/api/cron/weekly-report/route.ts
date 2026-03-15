@@ -25,11 +25,22 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: '試算表為空或無法讀取。' }, { status: 400 });
         }
 
+        // 3. Auto-Sync Watchlist (Call the sync endpoint internally via absolute URL dynamically or logic reuse)
+        try {
+            const host = request.headers.get('host');
+            const protocol = host?.includes('localhost') ? 'http' : 'https';
+            await fetch(`${protocol}://${host}/api/analyze/sync-watchlist`, {
+                method: 'POST'
+            });
+        } catch (syncErr) {
+            console.warn("Watchlist Auto-Sync inside Weekly Cron failed, continuing to report generation...", syncErr);
+        }
+
         const columns = Object.keys(rows[0]).filter(k => k !== 'id');
         const symbolCol = columns.find(c => c.includes('代號') || c.toLowerCase().includes('symbol')) || columns[0];
         const targetPriceCol = columns.find(c => c.includes('目標') || c.toLowerCase().includes('target'));
 
-        // 3. Analyze each stock deeply
+        // 4. Analyze each stock deeply
         let analysisReports = [];
 
         // We limit to first 10 stocks to avoid timeout / rate limits during the cron job
