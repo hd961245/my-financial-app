@@ -52,10 +52,12 @@ export async function analyzeStock(symbolParam: string) {
     const volumes = historical.map(h => h.volume || 0);
 
     // 3. Calculate Technical Indicators
-    // SMA 20 (月線), SMA 60 (季線)
+    // SMA 5 (週線), SMA 20 (月線), SMA 60 (季線)
+    const sma5 = SMA.calculate({ period: 5, values: closePrices });
     const sma20 = SMA.calculate({ period: 20, values: closePrices });
     const sma60 = SMA.calculate({ period: 60, values: closePrices });
 
+    const currentSma5 = sma5.length > 0 ? sma5[sma5.length - 1] : null;
     const currentSma20 = sma20.length > 0 ? sma20[sma20.length - 1] : null;
     const currentSma60 = sma60.length > 0 ? sma60[sma60.length - 1] : null;
 
@@ -69,13 +71,15 @@ export async function analyzeStock(symbolParam: string) {
 
     const currentPrice = quote.regularMarketPrice || closePrices[closePrices.length - 1];
 
-    // Basic Trend Analysis Heuristic
+    // Basic Trend Analysis Heuristic with SMA5
     let trend = "盤整 (Neutral)";
-    if (currentSma20 && currentSma60) {
-        if (currentPrice > currentSma20 && currentSma20 > currentSma60) trend = "多頭排列 (Bullish)";
+    if (currentSma5 && currentSma20 && currentSma60) {
+        if (currentPrice > currentSma5 && currentSma5 > currentSma20 && currentSma20 > currentSma60) trend = "強勢多頭 (Strong Bullish)";
+        else if (currentPrice > currentSma20 && currentSma20 > currentSma60) trend = "多頭排列 (Bullish)";
+        else if (currentPrice < currentSma5 && currentSma5 < currentSma20 && currentSma20 < currentSma60) trend = "強勢空頭 (Strong Bearish)";
         else if (currentPrice < currentSma20 && currentSma20 < currentSma60) trend = "空頭排列 (Bearish)";
-        else if (currentPrice > currentSma20) trend = "短多 (Short-term Bullish)";
-        else if (currentPrice < currentSma20) trend = "短空 (Short-term Bearish)";
+        else if (currentPrice > currentSma20) trend = "短多反彈 (Short-term Bullish)";
+        else if (currentPrice < currentSma20) trend = "短空回檔 (Short-term Bearish)";
     }
 
     // Burst Volume Analysis (爆量判定)
@@ -107,6 +111,7 @@ export async function analyzeStock(symbolParam: string) {
         changePercent: quote.regularMarketChangePercent,
         technical: {
             trend,
+            sma5: currentSma5,
             sma20: currentSma20,
             sma60: currentSma60,
             rsi: currentRsi,

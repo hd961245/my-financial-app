@@ -44,10 +44,12 @@ export async function GET() {
         });
 
         // Format and flatten holdings
-        const flatHoldings = Object.values(holdingsMap)
+        const allHoldings = Object.values(holdingsMap);
+
+        const flatHoldings = allHoldings
             .filter((data) => data.shares > 0)
             .map((data, index) => ({
-                id: index,
+                id: `h_${index}`,
                 symbol: data.symbol,
                 categoryId: data.categoryId,
                 categoryName: data.categoryName,
@@ -55,15 +57,26 @@ export async function GET() {
                 price: data.totalCost / data.shares, // Avg Cost
             }));
 
-        // Group holdings by Category Name
+        const watchlistHoldings = allHoldings
+            .filter((data) => data.shares <= 0)
+            .map((data, index) => ({
+                id: `w_${index}`,
+                symbol: data.symbol,
+                categoryId: data.categoryId,
+                categoryName: data.categoryName,
+                shares: 0,
+                price: 0,
+            }));
+
+        // Group actual holdings by Category Name
         const groupedHoldings: Record<string, any[]> = {};
         flatHoldings.forEach(h => {
             if (!groupedHoldings[h.categoryName]) groupedHoldings[h.categoryName] = [];
             groupedHoldings[h.categoryName].push(h);
         });
 
-        // Fetch live quotes for active unique symbols
-        const uniqueSymbols = Array.from(new Set(flatHoldings.map(h => h.symbol)));
+        // Fetch live quotes for active unique symbols (including watchlist)
+        const uniqueSymbols = Array.from(new Set([...flatHoldings, ...watchlistHoldings].map(h => h.symbol)));
         const quotes: Record<string, { regularMarketPrice: number, regularMarketChangePercent: number }> = {};
         for (const sym of uniqueSymbols) {
             try {
@@ -82,6 +95,7 @@ export async function GET() {
         return NextResponse.json({
             holdings: groupedHoldings, // Now sending grouped object
             flatHoldings,              // Keeping flat array just in case
+            watchlistHoldings,         // Items with 0 shares
             trades: trades.reverse(),
             realizedPnL: totalRealizedPnL,
             quotes
@@ -122,12 +136,14 @@ export async function POST(request: Request) {
 
             // 3. Perform Trade and Account Balance update in a Transaction
             const result = await prisma.$transaction(async (tx) => {
-                // Update balance
-                const newBalance = tradeType === 'BUY' ? account!.balance - totalValue : account!.balance + totalValue;
-                await tx.account.update({
-                    where: { id: account!.id },
-                    data: { balance: newBalance }
-                });
+                // Update balance if not a WATCH operation
+                if (tradeType !== 'WATCH') {
+                    const newBalance = tradeType === 'BUY' ? account!.balance - totalValue : account!.balance + totalValue;
+                    await tx.account.update({
+                        where: { id: account!.id },
+                        data: { balance: newBalance }
+                    });
+                }
 
                 // Create the trade
                 const newTrade = await tx.trade.create({
@@ -142,15 +158,17 @@ export async function POST(request: Request) {
                     }
                 });
 
-                // Log the ledger transaction
-                await tx.accountTransaction.create({
-                    data: {
-                        accountId: account!.id,
-                        type: tradeType === 'BUY' ? 'TRADE_BUY' : 'TRADE_SELL',
-                        amount: tradeType === 'BUY' ? -totalValue : totalValue,
-                        notes: `${tradeType === 'BUY' ? '買入' : '賣出'} ${shares} 股 ${symbol.toUpperCase()} @ ${price}`
-                    }
-                });
+                // Log the ledger transaction if not purely a WATCH
+                if (tradeType !== 'WATCH') {
+                    await tx.accountTransaction.create({
+                        data: {
+                            accountId: account!.id,
+                            type: tradeType === 'BUY' ? 'TRADE_BUY' : 'TRADE_SELL',
+                            amount: tradeType === 'BUY' ? -totalValue : totalValue,
+                            notes: `${tradeType === 'BUY' ? '買入' : '賣出'} ${shares} 股 ${symbol.toUpperCase()} @ ${price}`
+                        }
+                    });
+                }
 
                 return newTrade;
             });

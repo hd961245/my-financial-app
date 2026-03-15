@@ -476,8 +476,8 @@ export function GoogleSheetsTracker() {
                             ⚠️ 錯誤：{reportError}
                         </div>
                     ) : (
-                        <div className="p-6 bg-slate-50 rounded-lg border border-slate-200 shadow-inner">
-                            <div className="prose prose-slate max-w-none text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                        <div className="p-6 bg-white rounded-lg border border-slate-200 shadow-inner">
+                            <div className="prose prose-slate max-w-none text-sm md:text-base leading-relaxed whitespace-pre-wrap text-slate-800">
                                 {weeklyReport}
                             </div>
                         </div>

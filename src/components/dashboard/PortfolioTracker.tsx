@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw, Trash2, Wallet } from "lucide-react";
+import { RefreshCcw, Trash2, Wallet, Bot, Activity } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import * as xlsx from "xlsx";
@@ -41,6 +41,7 @@ type Category = {
 export function PortfolioTracker() {
     const [groupedHoldings, setGroupedHoldings] = useState<Record<string, HoldingItem[]>>({});
     const [flatHoldings, setFlatHoldings] = useState<HoldingItem[]>([]);
+    const [watchlistHoldings, setWatchlistHoldings] = useState<HoldingItem[]>([]);
     const [trades, setTrades] = useState<TradeItem[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [realizedPnL, setRealizedPnL] = useState<number>(0);
@@ -60,6 +61,12 @@ export function PortfolioTracker() {
     const [price, setPrice] = useState("");
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [categoryId, setCategoryId] = useState<string>("none"); // 'none' means unassigned
+
+    // Recommendation Modal states
+    const [recommendModalOpen, setRecommendModalOpen] = useState(false);
+    const [isRecommending, setIsRecommending] = useState(false);
+    const [recommendData, setRecommendData] = useState<any>(null);
+    const [recommendError, setRecommendError] = useState("");
 
     const [newCategoryName, setNewCategoryName] = useState("");
 
@@ -89,6 +96,7 @@ export function PortfolioTracker() {
             const data = await res.json();
             setGroupedHoldings(data.holdings || {});
             setFlatHoldings(data.flatHoldings || []);
+            setWatchlistHoldings(data.watchlistHoldings || []);
             setTrades(data.trades || []);
             setRealizedPnL(data.realizedPnL || 0);
             setQuotes(data.quotes || {});
@@ -255,6 +263,28 @@ export function PortfolioTracker() {
     const totalUnrealizedPnL = flatHoldings.reduce((acc, item) => acc + calculateUnrealizedPnL(item).pnl, 0);
     const totalValue = flatHoldings.reduce((acc, item) => acc + calculateUnrealizedPnL(item).currentVal, 0);
     const totalProfit = totalUnrealizedPnL + realizedPnL;
+
+    const handleRecommend = async (symbol: string, name?: string) => {
+        setRecommendModalOpen(true);
+        setIsRecommending(true);
+        setRecommendData(null);
+        setRecommendError("");
+
+        try {
+            const res = await fetch("/api/analyze/recommend", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ symbol, name })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "分析失敗");
+            setRecommendData({ symbol, ...data });
+        } catch (err: any) {
+            setRecommendError(err.message);
+        } finally {
+            setIsRecommending(false);
+        }
+    };
 
     return (
         <div className="space-y-4">
@@ -450,6 +480,49 @@ export function PortfolioTracker() {
                         )}
                     </CardContent>
                 </Card>
+
+                {/* Left/Right spanning Watchlist section (optional grid stretch later if needed) */}
+                <Card className="md:col-span-2">
+                    <CardHeader className="flex flex-row items-center justify-between">
+                        <CardTitle>觀察清單 (Watchlist - 0 股)</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {watchlistHoldings.length === 0 ? (
+                            <div className="text-center py-6 text-muted-foreground">目前無任何觀察清單資料。請使用新增交易時選擇「純觀察」。</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>股票代號</TableHead>
+                                            <TableHead>目前市價</TableHead>
+                                            <TableHead>所屬分類</TableHead>
+                                            <TableHead className="text-right">AI 買入評估</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {watchlistHoldings.map((item) => {
+                                            const quote = quotes[item.symbol];
+                                            return (
+                                                <TableRow key={item.id}>
+                                                    <TableCell className="font-medium">{item.symbol}</TableCell>
+                                                    <TableCell>{quote ? `$${quote.regularMarketPrice.toFixed(2)}` : '...'}</TableCell>
+                                                    <TableCell>{item.categoryName}</TableCell>
+                                                    <TableCell className="text-right">
+                                                        <Button variant="outline" size="sm" onClick={() => handleRecommend(item.symbol, item.symbol)}>
+                                                            <Bot className="h-4 w-4 mr-2 text-purple-600" />
+                                                            分析
+                                                        </Button>
+                                                    </TableCell>
+                                                </TableRow>
+                                            )
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Trade Ledger / History */}
@@ -490,6 +563,54 @@ export function PortfolioTracker() {
                     </Table>
                 </CardContent>
             </Card>
+
+            {/* AI Recommendation Modal */}
+            {recommendModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-xl shadow-xl overflow-hidden">
+                        <div className="p-4 border-b flex justify-between items-center bg-muted/30">
+                            <h3 className="font-bold flex items-center gap-2 text-lg text-purple-700">
+                                <Bot className="h-5 w-5" /> AI 買入評估
+                            </h3>
+                            <Button variant="ghost" size="icon" onClick={() => setRecommendModalOpen(false)}>✕</Button>
+                        </div>
+                        <div className="p-6">
+                            {isRecommending ? (
+                                <div className="flex flex-col items-center justify-center py-10 space-y-4">
+                                    <Activity className="h-10 w-10 animate-spin text-purple-600" />
+                                    <p className="text-muted-foreground animate-pulse text-sm">正在請教 AI 大師...</p>
+                                </div>
+                            ) : recommendError ? (
+                                <div className="p-4 bg-red-50 text-red-600 rounded-md">
+                                    ⚠️ {recommendError}
+                                </div>
+                            ) : recommendData ? (
+                                <div className="space-y-4">
+                                    <div className="text-xl font-bold border-b pb-2">{recommendData.symbol}</div>
+                                    <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                                        <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded">
+                                            <div className="text-muted-foreground text-xs">5日線 (SMA5)</div>
+                                            <div className="font-semibold">{recommendData.indicators?.sma5?.toFixed(2) || 'N/A'}</div>
+                                        </div>
+                                        <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded">
+                                            <div className="text-muted-foreground text-xs">20日線 (SMA20)</div>
+                                            <div className="font-semibold">{recommendData.indicators?.sma20?.toFixed(2) || 'N/A'}</div>
+                                        </div>
+                                        <div className="bg-slate-100 dark:bg-slate-800 p-2 rounded">
+                                            <div className="text-muted-foreground text-xs">季線 (SMA60)</div>
+                                            <div className="font-semibold">{recommendData.indicators?.sma60?.toFixed(2) || 'N/A'}</div>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 bg-purple-50 dark:bg-purple-900/20 text-slate-800 dark:text-slate-100 rounded-md border border-purple-100 dark:border-purple-800 text-base leading-relaxed whitespace-pre-wrap font-medium shadow-sm">
+                                        {recommendData.recommendation}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+
