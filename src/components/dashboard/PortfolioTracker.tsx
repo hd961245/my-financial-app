@@ -68,6 +68,11 @@ export function PortfolioTracker() {
     const [recommendData, setRecommendData] = useState<any>(null);
     const [recommendError, setRecommendError] = useState("");
 
+    // Watchlist Report Mode
+    const [watchlistReportOpen, setWatchlistReportOpen] = useState(false);
+    const [isGeneratingWatchlistReport, setIsGeneratingWatchlistReport] = useState(false);
+    const [watchlistReportContent, setWatchlistReportContent] = useState("");
+
     const [newCategoryName, setNewCategoryName] = useState("");
 
     const fetchAccount = async () => {
@@ -286,6 +291,29 @@ export function PortfolioTracker() {
         }
     };
 
+    const handleGenerateWatchlistReport = async () => {
+        if (watchlistHoldings.length === 0) return;
+        setWatchlistReportOpen(true);
+        setIsGeneratingWatchlistReport(true);
+        setWatchlistReportContent("");
+
+        try {
+            const symbols = watchlistHoldings.map(h => h.symbol);
+            const res = await fetch("/api/analyze/watchlist-report", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ symbols })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "分析失敗");
+            setWatchlistReportContent(data.report);
+        } catch (err: any) {
+            setWatchlistReportContent(`⚠️ 錯誤：${err.message}`);
+        } finally {
+            setIsGeneratingWatchlistReport(false);
+        }
+    };
+
     return (
         <div className="space-y-4">
             {/* Account Overview */}
@@ -485,6 +513,14 @@ export function PortfolioTracker() {
                 <Card className="md:col-span-2">
                     <CardHeader className="flex flex-row items-center justify-between">
                         <CardTitle>觀察清單 (Watchlist - 0 股)</CardTitle>
+                        <Button
+                            onClick={handleGenerateWatchlistReport}
+                            disabled={watchlistHoldings.length === 0}
+                            className="bg-purple-600 hover:bg-purple-700 text-white"
+                        >
+                            <Bot className="h-4 w-4 mr-2" />
+                            對觀察清單進行總體健檢
+                        </Button>
                     </CardHeader>
                     <CardContent>
                         {watchlistHoldings.length === 0 ? (
@@ -606,6 +642,32 @@ export function PortfolioTracker() {
                                     </div>
                                 </div>
                             ) : null}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Watchlist Batch Report Modal */}
+            {watchlistReportOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <div className="bg-white dark:bg-slate-900 w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl shadow-xl overflow-hidden">
+                        <div className="p-4 border-b flex justify-between items-center bg-muted/30">
+                            <h3 className="font-bold flex items-center gap-2 text-lg text-purple-700">
+                                <Bot className="h-5 w-5" /> 觀察清單總體健檢
+                            </h3>
+                            <Button variant="ghost" size="icon" onClick={() => setWatchlistReportOpen(false)}>✕</Button>
+                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            {isGeneratingWatchlistReport ? (
+                                <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                                    <Activity className="h-12 w-12 animate-spin text-purple-600" />
+                                    <p className="text-muted-foreground animate-pulse text-lg">正在為您的觀察清單撰寫報告...</p>
+                                </div>
+                            ) : (
+                                <div className="prose prose-slate max-w-none text-sm md:text-base leading-relaxed whitespace-pre-wrap text-slate-800 dark:text-slate-200">
+                                    {watchlistReportContent}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
