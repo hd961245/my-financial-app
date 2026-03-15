@@ -9,22 +9,53 @@ import { DataSourceManager } from "@/components/dashboard/DataSourceManager";
 import { GoogleSheetsTracker } from "@/components/dashboard/GoogleSheetsTracker";
 import { AIChatWidget } from "@/components/dashboard/AIChatWidget";
 import { CommunityAssistantWidget } from "@/components/dashboard/CommunityAssistantWidget";
+import { Backtester } from "@/components/dashboard/Backtester";
+import { StockScreener } from "@/components/dashboard/StockScreener";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
+interface QuoteData {
+  regularMarketPrice: number;
+  regularMarketChangePercent: number;
+  displayName?: string;
+  symbol?: string;
+}
+
+interface NewsItem {
+  title: string;
+  link: string;
+  publisher: string;
+  providerPublishTime: number;
+  thumbnail: { resolutions?: { url: string }[] } | null;
+}
+
+interface CustomFeedItem {
+  title: string;
+  link: string;
+  pubDate: string;
+  sourceName: string;
+  sourceType: string;
+  thumbnail?: string;
+}
+
+interface AllocationItem {
+  name: string;
+  value: number;
+}
+
 export default function Home() {
-  const [indices, setIndices] = useState<Record<string, any>>({});
-  const [news, setNews] = useState<any[]>([]);
-  const [customNews, setCustomNews] = useState<any[]>([]);
-  const [allocation, setAllocation] = useState<any[]>([]);
+  const [indices, setIndices] = useState<Record<string, QuoteData>>({});
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [customNews, setCustomNews] = useState<CustomFeedItem[]>([]);
+  const [allocation, setAllocation] = useState<AllocationItem[]>([]);
 
   useEffect(() => {
     const fetchIndices = async () => {
       const symbols = ["^GSPC", "^TWII", "^IXIC", "TWD=X"];
-      const data: Record<string, any> = {};
+      const data: Record<string, QuoteData> = {};
       for (const sym of symbols) {
         try {
           const res = await fetch(`/api/quote?symbol=${sym}`);
@@ -56,8 +87,8 @@ export default function Home() {
           const grouped = portData.holdings || {};
           const quotes = portData.quotes || {};
 
-          const newAlloc = Object.entries(grouped).map(([catName, items]: [string, any]) => {
-            const value = items.reduce((acc: number, item: any) => {
+          const newAlloc = Object.entries(grouped).map(([catName, items]) => {
+            const value = (items as { symbol: string; shares: number; price: number }[]).reduce((acc, item) => {
               const currentPrice = quotes[item.symbol]?.regularMarketPrice || item.price;
               return acc + (item.shares * currentPrice);
             }, 0);
@@ -127,6 +158,8 @@ export default function Home() {
             <TabsTrigger value="portfolio">投資組合</TabsTrigger>
             <TabsTrigger value="custom">自訂資料源</TabsTrigger>
             <TabsTrigger value="watchlist">自選股清單</TabsTrigger>
+            <TabsTrigger value="backtest">策略回測</TabsTrigger>
+            <TabsTrigger value="screener">選股篩選</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -162,7 +195,7 @@ export default function Home() {
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: any) => typeof value === 'number' ? `$${value.toFixed(2)}` : value} />
+                        <Tooltip formatter={(value: number | string) => typeof value === 'number' ? `$${value.toFixed(2)}` : value} />
                         <Legend />
                       </RechartsPieChart>
                     </ResponsiveContainer>
@@ -256,6 +289,14 @@ export default function Home() {
 
           <TabsContent value="watchlist" className="space-y-4">
             <GoogleSheetsTracker />
+          </TabsContent>
+
+          <TabsContent value="backtest" className="space-y-4">
+            <Backtester />
+          </TabsContent>
+
+          <TabsContent value="screener" className="space-y-4">
+            <StockScreener />
           </TabsContent>
 
         </Tabs>

@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import Parser from 'rss-parser';
 import * as cheerio from 'cheerio';
 
-const prisma = new PrismaClient();
 const parser = new Parser();
+const FETCH_TIMEOUT_MS = 10000;
 
 export const dynamic = 'force-dynamic';
 
@@ -12,45 +12,46 @@ export async function GET() {
     try {
         const sources = await prisma.dataSource.findMany();
 
-        let allFeeds: any[] = [];
-
-        // We process sequentially or Promise.all. 
-        // For a large number of sources, a queue system is better, but this handles simple use-cases.
-        await Promise.all(sources.map(async (source: any) => {
+        const feedResults = await Promise.all(sources.map(async (source) => {
             try {
                 if (source.type === 'RSS') {
                     const feed = await parser.parseURL(source.url);
-                    // Take top 5 from this feed
-                    const topItems = feed.items.slice(0, 5).map(item => ({
+                    return feed.items.slice(0, 5).map(item => ({
                         title: item.title,
                         link: item.link,
                         pubDate: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
                         sourceName: source.name,
                         sourceType: 'RSS',
                     }));
-                    allFeeds = [...allFeeds, ...topItems];
                 } else if (source.type === 'HTML') {
                     // Primitive scraper for OpenGraph tags on HTML pages
-                    const res = await fetch(source.url, { next: { revalidate: 3600 } });
-                    const html = await res.text();
-                    const $ = cheerio.load(html);
-
-                    const title = $('meta[property="og:title"]').attr('content') || $('title').text();
-                    const image = $('meta[property="og:image"]').attr('content');
-
-                    allFeeds.push({
-                        title: title || 'No title found',
-                        link: source.url,
-                        pubDate: new Date().toISOString(),
-                        sourceName: source.name,
-                        sourceType: 'HTML',
-                        thumbnail: image
-                    });
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+                    try {
+                        const res = await fetch(source.url, { signal: controller.signal, next: { revalidate: 3600 } });
+                        const html = await res.text();
+                        const $ = cheerio.load(html);
+                        const title = $('meta[property="og:title"]').attr('content') || $('title').text();
+                        const image = $('meta[property="og:image"]').attr('content');
+                        return [{
+                            title: title || 'No title found',
+                            link: source.url,
+                            pubDate: new Date().toISOString(),
+                            sourceName: source.name,
+                            sourceType: 'HTML',
+                            thumbnail: image
+                        }];
+                    } finally {
+                        clearTimeout(timeout);
+                    }
                 }
             } catch (err) {
                 console.error(`Failed to fetch custom source ${source.name} (${source.url})`, err);
             }
+            return [];
         }));
+
+        const allFeeds = feedResults.flat();
 
         // Sort globally by pubDate descending
         allFeeds.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());

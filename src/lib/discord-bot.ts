@@ -6,6 +6,9 @@ declare global {
     var __discordClient: Client | undefined;
 }
 
+// Initialize OpenAI client once at module level to avoid per-message instantiation
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 export async function registerDiscordBot() {
     const token = process.env.DISCORD_BOT_TOKEN;
 
@@ -49,8 +52,6 @@ export async function registerDiscordBot() {
         console.log(`[Discord Bot] Found message from ${message.author.tag}. Processing...`);
 
         try {
-            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
             const systemPrompt = `你是一位專業的『財經社群情報員』，在一個私人的投資群組中監聽對話與截圖。
 使用者的訊息可能包含純文字、圖片，或是兩者皆有。
 請你幫忙獨立思考並過濾：

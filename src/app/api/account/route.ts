@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-// Helper to ensure a default account exists
+// Helper to ensure a default PAPER account exists
 async function getDefaultAccount() {
     let account = await prisma.account.findFirst();
     if (!account) {
@@ -9,6 +9,7 @@ async function getDefaultAccount() {
             data: {
                 name: "我的模擬帳戶",
                 currency: "TWD",
+                accountType: "PAPER",
                 balance: 0,
                 totalDeposit: 0,
             }
@@ -19,20 +20,44 @@ async function getDefaultAccount() {
 
 export async function GET() {
     try {
-        const account = await getDefaultAccount();
-        return NextResponse.json({ account });
+        const accounts = await prisma.account.findMany({ orderBy: { createdAt: 'asc' } });
+        if (accounts.length === 0) {
+            const account = await getDefaultAccount();
+            return NextResponse.json({ account, accounts: [account] });
+        }
+        return NextResponse.json({ account: accounts[0], accounts });
     } catch (error) {
         console.error("Failed to fetch account:", error);
         return NextResponse.json({ error: "無法取得帳戶資料" }, { status: 500 });
     }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const { action, amount, notes } = body;
+        const { action, amount, notes, accountId, name, accountType } = body;
 
-        let account = await getDefaultAccount();
+        // Create new account
+        if (action === 'create') {
+            if (!name) return NextResponse.json({ error: '請提供帳戶名稱' }, { status: 400 });
+            const newAccount = await prisma.account.create({
+                data: {
+                    name: String(name),
+                    accountType: accountType === 'REAL' ? 'REAL' : 'PAPER',
+                    currency: 'TWD',
+                    balance: 0,
+                    totalDeposit: 0,
+                }
+            });
+            return NextResponse.json({ account: newAccount });
+        }
+
+        // Deposit / Withdraw
+        let account = accountId
+            ? await prisma.account.findUnique({ where: { id: accountId } })
+            : await getDefaultAccount();
+
+        if (!account) return NextResponse.json({ error: '找不到帳戶' }, { status: 404 });
 
         if (!action || typeof amount !== 'number' || amount <= 0) {
             return NextResponse.json({ error: '請提供有效的操作與金額' }, { status: 400 });
@@ -43,22 +68,17 @@ export async function POST(request: Request) {
         }
 
         const transaction = await prisma.$transaction(async (tx) => {
-            // Update account balance
-            const newBalance = action === 'deposit' ? account.balance + amount : account.balance - amount;
-            const newTotalDeposit = action === 'deposit' ? account.totalDeposit + amount : account.totalDeposit; // optional: subtract on withdraw?
+            const newBalance = action === 'deposit' ? account!.balance + amount : account!.balance - amount;
+            const newTotalDeposit = action === 'deposit' ? account!.totalDeposit + amount : account!.totalDeposit;
 
             const updatedAccount = await tx.account.update({
-                where: { id: account.id },
-                data: {
-                    balance: newBalance,
-                    totalDeposit: newTotalDeposit // We only track total money put in historically
-                }
+                where: { id: account!.id },
+                data: { balance: newBalance, totalDeposit: newTotalDeposit }
             });
 
-            // Log transaction
             const t = await tx.accountTransaction.create({
                 data: {
-                    accountId: account.id,
+                    accountId: account!.id,
                     type: action === 'deposit' ? 'DEPOSIT' : 'WITHDRAWAL',
                     amount: action === 'deposit' ? amount : -amount,
                     notes: notes || (action === 'deposit' ? '入金' : '提款')
