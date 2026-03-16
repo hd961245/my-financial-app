@@ -277,7 +277,7 @@ export function StockHealthAnalyzer() {
                                                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                                                 <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={d => d.slice(2)} />
                                                 <YAxis tick={{ fontSize: 10 }} width={35} />
-                                                <Tooltip formatter={(v: number) => [`$${v}`, 'EPS']} labelFormatter={d => `季度：${d}`} />
+                                                <Tooltip formatter={(v: number | undefined) => [v != null ? `$${v}` : '', 'EPS']} labelFormatter={d => `季度：${d}`} />
                                                 <Bar dataKey="eps" radius={[3, 3, 0, 0]}>
                                                     {financialData.income.map((entry: any, idx: number) => (
                                                         <Cell key={idx} fill={entry.eps >= 0 ? '#10b981' : '#ef4444'} />

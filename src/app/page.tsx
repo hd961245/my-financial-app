@@ -195,7 +195,7 @@ export default function Home() {
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <Tooltip formatter={(value: number | string) => typeof value === 'number' ? `$${value.toFixed(2)}` : value} />
+                        <Tooltip formatter={(value: number | string | undefined) => value == null ? '' : typeof value === 'number' ? `$${value.toFixed(2)}` : value} />
                         <Legend />
                       </RechartsPieChart>
                     </ResponsiveContainer>

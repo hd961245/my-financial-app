@@ -519,7 +519,7 @@ export function PortfolioTracker() {
                                         <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                                         <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d.slice(5)} interval="preserveStartEnd" />
                                         <YAxis tick={{ fontSize: 11 }} width={60} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
-                                        <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, '淨值']} labelFormatter={d => `日期：${d}`} />
+                                        <Tooltip formatter={(v: number | undefined) => [v != null ? `$${v.toLocaleString()}` : '', '淨值']} labelFormatter={d => `日期：${d}`} />
                                         <Line type="monotone" dataKey="totalValue" stroke="#3b82f6" dot={false} strokeWidth={2} />
                                     </RechartsLineChart>
                                 </ResponsiveContainer>
