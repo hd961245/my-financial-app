@@ -11,6 +11,7 @@ import { AIChatWidget } from "@/components/dashboard/AIChatWidget";
 import { CommunityAssistantWidget } from "@/components/dashboard/CommunityAssistantWidget";
 import { Backtester } from "@/components/dashboard/Backtester";
 import { StockScreener } from "@/components/dashboard/StockScreener";
+import { DailyRecommendation } from "@/components/dashboard/DailyRecommendation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -160,6 +161,7 @@ export default function Home() {
             <TabsTrigger value="watchlist">自選股清單</TabsTrigger>
             <TabsTrigger value="backtest">策略回測</TabsTrigger>
             <TabsTrigger value="screener">選股篩選</TabsTrigger>
+            <TabsTrigger value="daily">每日推薦</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -297,6 +299,10 @@ export default function Home() {
 
           <TabsContent value="screener" className="space-y-4">
             <StockScreener />
+          </TabsContent>
+
+          <TabsContent value="daily" className="space-y-4">
+            <DailyRecommendation />
           </TabsContent>
 
         </Tabs>

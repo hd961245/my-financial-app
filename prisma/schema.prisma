@@ -83,3 +83,20 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+model DailyRecommendation {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @default(now())
+  symbol    String
+  name      String
+  action    String   // 'STRONG_BUY', 'BUY', 'HOLD', 'REDUCE', 'SELL', 'WATCH', 'AVOID'
+  reason    String
+  price     Float
+  trend     String
+  rsi       Float?
+  isHolding Boolean  @default(false) // true = currently held, false = watchlist
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([symbol])
+}
+
