@@ -293,7 +293,7 @@ export function Backtester() {
                       width={55}
                     />
                     <Tooltip
-                      formatter={(v: number) => [formatCurrency(v), '資金']}
+                      formatter={(v: number | undefined) => [v != null ? formatCurrency(v) : '', '資金']}
                       labelFormatter={d => `日期：${d}`}
                     />
                     <ReferenceLine y={100000} stroke="#6b7280" strokeDasharray="4 4" label={{ value: '初始資金', position: 'insideTopRight', fontSize: 11 }} />
