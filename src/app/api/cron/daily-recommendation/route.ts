@@ -13,14 +13,35 @@ interface StockEntry {
     isHolding: boolean;
 }
 
-export async function GET(request: Request) {
-    try {
-        // 1. Collect all unique stocks from portfolio (holdings + watchlist)
-        const trades = await prisma.trade.findMany({
-            orderBy: { date: 'asc' },
-        });
+interface StockRec {
+    symbol: string;
+    action: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'REDUCE' | 'SELL' | 'WATCH' | 'AVOID';
+    reason: string;
+}
 
-        // Calculate net positions per symbol
+interface AIResponse {
+    summary: string;
+    stocks: StockRec[];
+    spotlight: { symbol: string; reason: string }[];
+    fullReport: string;
+}
+
+function verifyCronSecret(request: Request): boolean {
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return true; // No secret configured, allow in dev
+    return authHeader === `Bearer ${cronSecret}`;
+}
+
+export async function GET(request: Request) {
+    if (!verifyCronSecret(request)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    try {
+        // 1. Collect stocks from portfolio
+        const trades = await prisma.trade.findMany({ orderBy: { date: 'asc' } });
+
         const positionMap = new Map<string, number>();
         for (const trade of trades) {
             const current = positionMap.get(trade.symbol) || 0;
@@ -34,11 +55,7 @@ export async function GET(request: Request) {
         const stockEntries: StockEntry[] = [];
         for (const [symbol, shares] of positionMap.entries()) {
             if (shares >= 0) {
-                stockEntries.push({
-                    symbol,
-                    shares,
-                    isHolding: shares > 0,
-                });
+                stockEntries.push({ symbol, shares, isHolding: shares > 0 });
             }
         }
 
@@ -60,14 +77,13 @@ export async function GET(request: Request) {
                 }
             }
         } catch (e) {
-            console.warn('Failed to fetch Google Sheets watchlist for daily recommendation:', e);
+            console.warn('Failed to fetch Google Sheets watchlist:', e);
         }
 
         if (stockEntries.length === 0) {
-            return NextResponse.json({ error: '沒有找到任何持股或觀察清單的股票。請先新增投資組合或自選股。' }, { status: 400 });
+            return NextResponse.json({ error: '沒有找到任何持股或觀察清單的股票。' }, { status: 400 });
         }
 
-        // Limit to 15 stocks max
         const toAnalyze = stockEntries.slice(0, 15);
 
         // 2. Analyze each stock
@@ -77,7 +93,7 @@ export async function GET(request: Request) {
                 const analysis = await analyzeStock(entry.symbol);
                 analysisResults.push({ entry, analysis });
             } catch (err) {
-                console.warn(`Daily recommendation: failed to analyze ${entry.symbol}:`, err);
+                console.warn(`Failed to analyze ${entry.symbol}:`, err);
             }
         }
 
@@ -85,107 +101,126 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: '無法分析任何股票。' }, { status: 400 });
         }
 
-        // 3. Build data summary for AI
-        const stockSummaries = analysisResults.map(({ entry, analysis }) => {
-            const holdingStatus = entry.isHolding ? `持有中 (${entry.shares} 股)` : '觀察中 (未持有)';
-            return `
-📍 **${analysis.name} (${analysis.symbol})** — ${holdingStatus}
-- 最新收盤價：$${analysis.price} (${analysis.changePercent >= 0 ? '+' : ''}${analysis.changePercent?.toFixed(2)}%)
-- 趨勢：${analysis.technical.trend}
-- SMA5: ${analysis.technical.sma5?.toFixed(2) || 'N/A'}, SMA20: ${analysis.technical.sma20?.toFixed(2) || 'N/A'}, SMA60: ${analysis.technical.sma60?.toFixed(2) || 'N/A'}
-- RSI(14): ${analysis.technical.rsi?.toFixed(2) || 'N/A'}
-- 量能：${analysis.technical.isVolumeBurst ? '🔥 近日爆量' : '平穩'}
-- 近期新聞：${analysis.news.length > 0 ? analysis.news[0].title : '無'}
-            `.trim();
-        }).join('\n\n');
+        // 3. Build data block for AI
+        const stockSummaries = analysisResults.map(({ entry, analysis }) => ({
+            symbol: analysis.symbol,
+            name: analysis.name,
+            status: entry.isHolding ? `持有中 (${entry.shares} 股)` : '觀察中',
+            price: analysis.price,
+            changePercent: analysis.changePercent,
+            trend: analysis.technical.trend,
+            sma5: analysis.technical.sma5?.toFixed(2),
+            sma20: analysis.technical.sma20?.toFixed(2),
+            sma60: analysis.technical.sma60?.toFixed(2),
+            rsi: analysis.technical.rsi?.toFixed(2),
+            volumeBurst: analysis.technical.isVolumeBurst,
+            latestNews: analysis.news[0]?.title || '無',
+        }));
+
+        const validActions = ['STRONG_BUY', 'BUY', 'HOLD', 'REDUCE', 'SELL', 'WATCH', 'AVOID'];
 
         const systemPrompt = `你是一位實戰經驗豐富的『每日操盤策略師』。
-系統每天早上會替使用者掃描他的持股和觀察清單，以下是量化程式分析出的技術面數據。
+系統每天早上替使用者掃描持股和觀察清單，提供今日操作建議。
 
-請你針對每一檔股票給出【今日操作建議】。
+你必須嚴格以 JSON 格式回覆，結構如下：
+{
+  "summary": "30字以內的今日整體盤勢觀察",
+  "stocks": [
+    {
+      "symbol": "股票代號（原始格式）",
+      "action": "動作（必須是以下其中一個：STRONG_BUY, BUY, HOLD, REDUCE, SELL, WATCH, AVOID）",
+      "reason": "1-2句技術面具體理由，繁體中文，50字以內"
+    }
+  ],
+  "spotlight": [
+    { "symbol": "代號", "reason": "為何今日特別值得關注" }
+  ],
+  "fullReport": "完整的 Markdown 格式分析報告，包含持有與觀察兩個區塊，以及⚡今日重點關注"
+}
 
-【格式要求】：
-1. 開頭用一段 30 字以內的「今日整體盤勢觀察」。
-2. 將股票分成兩個區塊：
-   - 📦 **持有中的股票** — 給出：✅ 繼續持有 / ⬆️ 可加碼 / ⚠️ 考慮減碼 / 🔴 建議賣出
-   - 👀 **觀察中的股票** — 給出：🟢 建議買入 / 🟡 繼續觀察 / 🔴 暫時避開
-3. 每檔股票只給 1-2 句話，要包含具體技術面理由（如：站上月線、RSI 超賣反彈等）。
-4. 最後加一段「⚡ 今日重點關注」，列出最值得注意的 1-3 檔股票及原因。
-5. 嚴禁瞎編數據，只能用提供的資料。
-6. 使用繁體中文，Markdown 格式。`;
+規則：
+1. 嚴禁瞎編數據，只能依據提供的技術指標
+2. 持有中股票的 action 只能是：STRONG_BUY, BUY, HOLD, REDUCE, SELL
+3. 觀察中股票的 action 只能是：BUY, STRONG_BUY, WATCH, AVOID
+4. spotlight 選 1-3 檔最值得注意的股票
+5. 全部使用繁體中文`;
 
-        let aiReport = '';
+        let parsed: AIResponse | null = null;
 
+        // Try OpenAI with json_object mode
         try {
             const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy_key' });
             const completion = await openai.chat.completions.create({
                 model: 'gpt-4o-mini',
+                response_format: { type: 'json_object' },
                 messages: [
                     { role: 'system', content: systemPrompt },
-                    { role: 'user', content: `以下是今日的持股與觀察清單掃描結果：\n\n${stockSummaries}\n\n請給出今日操作建議！` },
+                    { role: 'user', content: `今日掃描資料：\n${JSON.stringify(stockSummaries, null, 2)}\n\n請回傳 JSON 格式的今日操作建議。` },
                 ],
                 temperature: 0.7,
             });
-            aiReport = completion.choices[0].message.content || '';
+            parsed = JSON.parse(completion.choices[0].message.content || '{}');
         } catch (openAiErr) {
-            console.warn('OpenAI daily recommendation failed, falling back to Gemini:', openAiErr);
-            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy_key');
-            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction: systemPrompt });
-            const result = await model.generateContent(`以下是今日的持股與觀察清單掃描結果：\n\n${stockSummaries}\n\n請給出今日操作建議！`);
-            aiReport = result.response.text();
+            console.warn('OpenAI failed, falling back to Gemini:', openAiErr);
+            try {
+                const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy_key');
+                const model = genAI.getGenerativeModel({
+                    model: 'gemini-2.5-flash',
+                    systemInstruction: systemPrompt,
+                    generationConfig: { responseMimeType: 'application/json' } as any,
+                });
+                const result = await model.generateContent(
+                    `今日掃描資料：\n${JSON.stringify(stockSummaries, null, 2)}\n\n請回傳 JSON 格式的今日操作建議。`
+                );
+                parsed = JSON.parse(result.response.text());
+            } catch (geminiErr) {
+                console.error('Gemini also failed:', geminiErr);
+                return NextResponse.json({ error: 'AI 分析失敗，請稍後重試' }, { status: 500 });
+            }
         }
 
-        // 4. Parse AI response to extract per-stock actions and save to DB
+        if (!parsed || !Array.isArray(parsed.stocks)) {
+            return NextResponse.json({ error: 'AI 回傳格式錯誤' }, { status: 500 });
+        }
+
+        // Validate actions
+        for (const s of parsed.stocks) {
+            if (!validActions.includes(s.action)) s.action = 'HOLD';
+        }
+
+        // 4. Save to DB (idempotent)
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Delete today's old recommendations (idempotent re-run)
         await prisma.dailyRecommendation.deleteMany({
-            where: {
-                date: {
-                    gte: today,
-                    lt: new Date(today.getTime() + 86400000),
-                },
+            where: { date: { gte: today, lt: new Date(today.getTime() + 86400000) } },
+        });
+        await prisma.dailyReport.deleteMany({
+            where: { date: today },
+        });
+
+        // Save full report
+        await prisma.dailyReport.create({
+            data: {
+                date: today,
+                summary: parsed.summary || '',
+                fullReport: parsed.fullReport || '',
+                spotlight: JSON.stringify(parsed.spotlight || []),
             },
         });
 
-        // Save individual stock recommendations
+        // Save per-stock recommendations
+        const stockRecMap = new Map(parsed.stocks.map(s => [s.symbol, s]));
+
         for (const { entry, analysis } of analysisResults) {
-            // Determine action from AI report heuristics
-            const symbolMention = aiReport.includes(analysis.symbol) || aiReport.includes(analysis.name);
-            let action = entry.isHolding ? 'HOLD' : 'WATCH';
-
-            if (symbolMention) {
-                const relevantSection = aiReport.substring(
-                    Math.max(0, aiReport.indexOf(analysis.name || analysis.symbol) - 10),
-                    aiReport.indexOf(analysis.name || analysis.symbol) + 200
-                );
-                if (relevantSection.includes('建議賣出') || relevantSection.includes('🔴')) action = entry.isHolding ? 'SELL' : 'AVOID';
-                else if (relevantSection.includes('減碼') || relevantSection.includes('⚠️')) action = 'REDUCE';
-                else if (relevantSection.includes('加碼') || relevantSection.includes('⬆️')) action = 'STRONG_BUY';
-                else if (relevantSection.includes('建議買入') || relevantSection.includes('🟢')) action = 'BUY';
-                else if (relevantSection.includes('繼續持有') || relevantSection.includes('✅')) action = 'HOLD';
-                else if (relevantSection.includes('繼續觀察') || relevantSection.includes('🟡')) action = 'WATCH';
-                else if (relevantSection.includes('避開')) action = 'AVOID';
-            }
-
-            // Extract a short reason from the AI report
-            let reason = '';
-            const nameOrSymbol = analysis.name || analysis.symbol;
-            const idx = aiReport.indexOf(nameOrSymbol);
-            if (idx !== -1) {
-                const afterMention = aiReport.substring(idx, idx + 300);
-                const lines = afterMention.split('\n').filter(l => l.trim().length > 0);
-                reason = lines.slice(0, 2).join(' ').substring(0, 200);
-            }
-
+            const rec = stockRecMap.get(analysis.symbol);
             await prisma.dailyRecommendation.create({
                 data: {
                     date: today,
                     symbol: analysis.symbol,
                     name: analysis.name || analysis.symbol,
-                    action,
-                    reason: reason || '詳見完整報告',
+                    action: rec?.action || (entry.isHolding ? 'HOLD' : 'WATCH'),
+                    reason: rec?.reason || '詳見完整報告',
                     price: analysis.price || 0,
                     trend: analysis.technical.trend || 'N/A',
                     rsi: analysis.technical.rsi || null,
@@ -194,30 +229,59 @@ export async function GET(request: Request) {
             });
         }
 
-        // 5. Optional: Send to Discord
+        // 5. Check price alerts
+        const activeAlerts = await prisma.priceAlert.findMany({ where: { isActive: true } });
+        const triggeredAlerts: string[] = [];
+
+        for (const alert of activeAlerts) {
+            const rec = analysisResults.find(r => r.analysis.symbol === alert.symbol);
+            if (!rec) continue;
+            const currentPrice = rec.analysis.price;
+            const triggered =
+                (alert.condition === 'ABOVE' && currentPrice >= alert.targetPrice) ||
+                (alert.condition === 'BELOW' && currentPrice <= alert.targetPrice);
+
+            if (triggered) {
+                await prisma.priceAlert.update({
+                    where: { id: alert.id },
+                    data: { isActive: false, triggeredAt: new Date() },
+                });
+                triggeredAlerts.push(
+                    `🔔 **${alert.name} (${alert.symbol})** 已${alert.condition === 'ABOVE' ? '突破' : '跌破'} $${alert.targetPrice}（現價 $${currentPrice.toFixed(2)}）`
+                );
+            }
+        }
+
+        // 6. Discord notification
         const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-        if (discordWebhookUrl && aiReport) {
+        if (discordWebhookUrl) {
             try {
-                const content = aiReport.length > 1900
-                    ? aiReport.substring(0, 1895) + '...'
-                    : aiReport;
+                let discordMsg = `📋 **每日 AI 操作建議** (${today.toLocaleDateString('zh-TW')})\n\n${parsed.summary}\n\n`;
+
+                if (triggeredAlerts.length > 0) {
+                    discordMsg += `**⚠️ 到價提醒：**\n${triggeredAlerts.join('\n')}\n\n`;
+                }
+
+                const reportSnippet = parsed.fullReport.length > 1500
+                    ? parsed.fullReport.substring(0, 1495) + '...'
+                    : parsed.fullReport;
+                discordMsg += reportSnippet;
+
                 await fetch(discordWebhookUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        content: `📋 **每日 AI 操作建議** (${today.toLocaleDateString('zh-TW')})\n\n${content}`,
-                    }),
+                    body: JSON.stringify({ content: discordMsg.substring(0, 2000) }),
                 });
             } catch (discordErr) {
-                console.warn('Failed to send daily recommendation to Discord:', discordErr);
+                console.warn('Discord notification failed:', discordErr);
             }
         }
 
         return NextResponse.json({
             success: true,
             date: today.toISOString(),
-            report: aiReport,
             stockCount: analysisResults.length,
+            triggeredAlerts,
         });
     } catch (error: any) {
         console.error('Daily Recommendation Cron Error:', error);

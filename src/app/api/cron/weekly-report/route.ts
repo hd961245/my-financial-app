@@ -9,7 +9,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // Allow 5 minutes for cron execution
 
+function verifyCronSecret(request: Request): boolean {
+    const authHeader = request.headers.get('authorization');
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) return true;
+    return authHeader === `Bearer ${cronSecret}`;
+}
+
 export async function GET(request: Request) {
+    if (!verifyCronSecret(request)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         // 1. Fetch Global Google Sheet ID
         const setting = await prisma.systemSetting.findUnique({ where: { key: 'GOOGLE_SHEET_ID' } });

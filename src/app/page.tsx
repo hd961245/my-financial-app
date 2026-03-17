@@ -12,6 +12,7 @@ import { CommunityAssistantWidget } from "@/components/dashboard/CommunityAssist
 import { Backtester } from "@/components/dashboard/Backtester";
 import { StockScreener } from "@/components/dashboard/StockScreener";
 import { DailyRecommendation } from "@/components/dashboard/DailyRecommendation";
+import { PriceAlerts } from "@/components/dashboard/PriceAlerts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -302,7 +303,10 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="daily" className="space-y-4">
-            <DailyRecommendation />
+            <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+              <DailyRecommendation />
+              <PriceAlerts />
+            </div>
           </TabsContent>
 
         </Tabs>

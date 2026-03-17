@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw, LineChart } from "lucide-react";
-import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StockChart } from "./StockChart";
 import { format } from "date-fns";
@@ -88,7 +88,7 @@ export function PortfolioTracker() {
     const [selectedChartSymbol, setSelectedChartSymbol] = useState("");
 
     // Net Worth history
-    const [netWorthHistory, setNetWorthHistory] = useState<{ date: string; totalValue: number }[]>([]);
+    const [netWorthHistory, setNetWorthHistory] = useState<{ date: string; totalValue: number; benchmark?: number }[]>([]);
     const [showNetWorthChart, setShowNetWorthChart] = useState(false);
 
     const [newCategoryName, setNewCategoryName] = useState("");
@@ -143,7 +143,36 @@ export function PortfolioTracker() {
     const fetchNetWorthHistory = async () => {
         try {
             const res = await fetch('/api/net-worth');
-            if (res.ok) setNetWorthHistory(await res.json());
+            if (!res.ok) return;
+            const history: { date: string; totalValue: number }[] = await res.json();
+            if (history.length < 2) { setNetWorthHistory(history); return; }
+
+            // Fetch S&P 500 for benchmark comparison
+            try {
+                const startDate = history[0].date;
+                const spRes = await fetch(`/api/historical?symbol=%5EGSPC&period=1y`);
+                if (spRes.ok) {
+                    const spData: { date: string; close: number }[] = await spRes.json();
+                    // Normalize: find S&P value at portfolio start date, scale to portfolio's first value
+                    const startSP = spData.find(d => d.date >= startDate)?.close;
+                    const startPortfolio = history[0].totalValue;
+
+                    if (startSP && startPortfolio > 0) {
+                        const spMap = new Map(spData.map(d => [d.date, d.close]));
+                        const merged = history.map(h => {
+                            const sp = spMap.get(h.date);
+                            return {
+                                ...h,
+                                benchmark: sp != null ? (sp / startSP) * startPortfolio : undefined,
+                            };
+                        });
+                        setNetWorthHistory(merged);
+                        return;
+                    }
+                }
+            } catch { /* benchmark fetch failed, show portfolio only */ }
+
+            setNetWorthHistory(history);
         } catch { /* ignore */ }
     };
 
@@ -519,8 +548,10 @@ export function PortfolioTracker() {
                                         <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                                         <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d.slice(5)} interval="preserveStartEnd" />
                                         <YAxis tick={{ fontSize: 11 }} width={60} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
-                                        <Tooltip formatter={(v: number | undefined) => [v != null ? `$${v.toLocaleString()}` : '', '淨值']} labelFormatter={d => `日期：${d}`} />
-                                        <Line type="monotone" dataKey="totalValue" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                                        <Tooltip formatter={(v: number | undefined) => [v != null ? `$${v.toLocaleString()}` : '', '']} labelFormatter={d => `日期：${d}`} />
+                                        <Legend />
+                                        <Line type="monotone" dataKey="totalValue" name="我的淨值" stroke="#3b82f6" dot={false} strokeWidth={2} />
+                                        <Line type="monotone" dataKey="benchmark" name="S&P 500 (同期)" stroke="#f59e0b" dot={false} strokeWidth={1.5} strokeDasharray="4 2" connectNulls />
                                     </RechartsLineChart>
                                 </ResponsiveContainer>
                             </div>

@@ -100,3 +100,28 @@ model DailyRecommendation {
   @@index([symbol])
 }
 
+model DailyReport {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique
+  summary   String   // Opening paragraph (30-char market overview)
+  fullReport String  // Full Markdown narrative from AI
+  spotlight  String  // JSON array of top 1-3 spotlight stocks
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
+model PriceAlert {
+  id          Int       @id @default(autoincrement())
+  symbol      String
+  name        String
+  targetPrice Float
+  condition   String    // 'ABOVE' | 'BELOW'
+  isActive    Boolean   @default(true)
+  triggeredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([symbol])
+  @@index([isActive])
+}
+
