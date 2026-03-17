@@ -83,3 +83,45 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 }
 
+model DailyRecommendation {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @default(now())
+  symbol    String
+  name      String
+  action    String   // 'STRONG_BUY', 'BUY', 'HOLD', 'REDUCE', 'SELL', 'WATCH', 'AVOID'
+  reason    String
+  price     Float
+  trend     String
+  rsi       Float?
+  isHolding Boolean  @default(false) // true = currently held, false = watchlist
+  createdAt DateTime @default(now())
+
+  @@index([date])
+  @@index([symbol])
+}
+
+model DailyReport {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique
+  summary   String   // Opening paragraph (30-char market overview)
+  fullReport String  // Full Markdown narrative from AI
+  spotlight  String  // JSON array of top 1-3 spotlight stocks
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}
+
+model PriceAlert {
+  id          Int       @id @default(autoincrement())
+  symbol      String
+  name        String
+  targetPrice Float
+  condition   String    // 'ABOVE' | 'BELOW'
+  isActive    Boolean   @default(true)
+  triggeredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([symbol])
+  @@index([isActive])
+}
+
