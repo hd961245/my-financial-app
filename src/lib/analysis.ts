@@ -1,5 +1,5 @@
 import YahooFinance from 'yahoo-finance2';
-import { SMA, RSI, MACD } from 'technicalindicators';
+import { SMA, RSI, MACD, BollingerBands } from 'technicalindicators';
 
 const yahooFinance = new YahooFinance();
 
@@ -88,6 +88,89 @@ export async function analyzeStock(symbolParam: string) {
     const currentVol = volumes[volumes.length - 1];
     const isVolumeBurst = currentVol > currentAvgVol * 2;
 
+    // ── 新增：布林通道 (Bollinger Bands, 20日 2σ) ─────────────────────────
+    const bb = BollingerBands.calculate({ period: 20, values: closePrices, stdDev: 2 });
+    const currentBB = bb.length > 0 ? bb[bb.length - 1] : null;
+    // 布林位置：price 相對於通道的百分位 (0=下軌, 1=上軌)
+    const bbPercent = currentBB
+        ? (currentPrice - currentBB.lower) / (currentBB.upper - currentBB.lower)
+        : null;
+    // 通道寬度佔中軌比例（越小代表即將爆發）
+    const bbWidth = currentBB ? (currentBB.upper - currentBB.lower) / currentBB.middle : null;
+
+    let bbPosition = "通道中段";
+    if (bbPercent !== null) {
+        if (bbPercent > 1.0)       bbPosition = "突破上軌（超買警戒）";
+        else if (bbPercent > 0.8)  bbPosition = "接近上軌（偏強）";
+        else if (bbPercent < 0.0)  bbPosition = "跌破下軌（超賣警戒）";
+        else if (bbPercent < 0.2)  bbPosition = "接近下軌（偏弱）";
+        else                       bbPosition = "通道中段";
+    }
+    const bbNarrow = bbWidth !== null && bbWidth < 0.06; // 通道收窄：即將大幅波動
+
+    // ── 新增：MACD 交叉偵測 ───────────────────────────────────────────────
+    const prevMacd = macd.length > 1 ? macd[macd.length - 2] : null;
+    let macdCrossover: 'golden' | 'death' | 'none' = 'none';
+    if (currentMacd?.MACD != null && currentMacd?.signal != null &&
+        prevMacd?.MACD != null && prevMacd?.signal != null) {
+        const prevDiff = prevMacd.MACD - prevMacd.signal;
+        const currDiff = currentMacd.MACD - currentMacd.signal;
+        if (prevDiff < 0 && currDiff >= 0) macdCrossover = 'golden'; // 黃金交叉
+        if (prevDiff > 0 && currDiff <= 0) macdCrossover = 'death';  // 死亡交叉
+    }
+
+    // MACD 柱狀圖趨勢（最近 3 根）
+    const recentHistograms = macd.slice(-3).map(m => m.histogram ?? 0);
+    let macdHistogramTrend: 'increasing' | 'decreasing' | 'flat' = 'flat';
+    if (recentHistograms.length >= 2) {
+        const allUp = recentHistograms.every((v, i, a) => i === 0 || v > a[i - 1]);
+        const allDown = recentHistograms.every((v, i, a) => i === 0 || v < a[i - 1]);
+        if (allUp) macdHistogramTrend = 'increasing';
+        else if (allDown) macdHistogramTrend = 'decreasing';
+    }
+
+    // ── 新增：RSI 方向（最近 3 個 RSI 值） ───────────────────────────────
+    const recentRsi = rsi14.slice(-3);
+    let rsiDirection: 'rising' | 'falling' | 'flat' = 'flat';
+    if (recentRsi.length >= 2) {
+        const allUp = recentRsi.every((v, i, a) => i === 0 || v > a[i - 1]);
+        const allDown = recentRsi.every((v, i, a) => i === 0 || v < a[i - 1]);
+        if (allUp) rsiDirection = 'rising';
+        else if (allDown) rsiDirection = 'falling';
+    }
+
+    // ── 新增：量價關係確認 ────────────────────────────────────────────────
+    // 比較最近 5 天的收盤價與成交量趨勢
+    const recent5Prices = closePrices.slice(-5);
+    const recent5Volumes = volumes.slice(-5);
+    const priceUp = recent5Prices[4] > recent5Prices[0];
+    const volUp = recent5Volumes[4] > recent5Volumes[0];
+    let volumePriceConfirmation: string;
+    if (priceUp && volUp)        volumePriceConfirmation = "量增價漲（健康多頭，確認度高）";
+    else if (priceUp && !volUp)  volumePriceConfirmation = "量縮價漲（上漲動能不足，需謹慎）";
+    else if (!priceUp && volUp)  volumePriceConfirmation = "量增價跌（賣壓沉重，空頭確認）";
+    else                         volumePriceConfirmation = "量縮價跌（無量下跌，跌勢或趨緩）";
+
+    // ── 新增：訊號衝突偵測 ────────────────────────────────────────────────
+    const signalConflicts: string[] = [];
+    // RSI 超賣但 MACD 仍在死叉
+    if (currentRsi !== null && currentRsi < 35 && currentMacd?.MACD != null && currentMacd?.signal != null &&
+        currentMacd.MACD < currentMacd.signal) {
+        signalConflicts.push("RSI 超賣但 MACD 仍空頭交叉（反彈訊號未確立，需等待 MACD 轉強）");
+    }
+    // RSI 超買但 MACD 黃金交叉
+    if (currentRsi !== null && currentRsi > 65 && macdCrossover === 'golden') {
+        signalConflicts.push("MACD 黃金交叉但 RSI 已超買（動能強但追高風險高）");
+    }
+    // 多頭排列但量縮
+    if ((trend.includes("Bullish") || trend.includes("多頭")) && !volUp && !isVolumeBurst) {
+        signalConflicts.push("均線多頭排列但近期量縮（上漲缺乏量能支撐，注意假突破）");
+    }
+    // 布林通道收窄（方向未定）
+    if (bbNarrow) {
+        signalConflicts.push("布林通道收窄（即將出現方向性突破，但方向未定，等待確認）");
+    }
+
     // 4. Fetch Latest News
     let news: any[] = [];
     try {
@@ -115,10 +198,18 @@ export async function analyzeStock(symbolParam: string) {
             sma20: currentSma20,
             sma60: currentSma60,
             rsi: currentRsi,
+            rsiDirection,
             macd: currentMacd,
+            macdCrossover,
+            macdHistogramTrend,
+            bollingerBands: currentBB,
+            bbPosition,
+            bbNarrow,
             isVolumeBurst,
             currentVolume: currentVol,
-            averageVolume20: currentAvgVol
+            averageVolume20: currentAvgVol,
+            volumePriceConfirmation,
+            signalConflicts,
         },
         news
     };
