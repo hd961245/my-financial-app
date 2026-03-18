@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { TermTooltip } from "@/components/ui/term-tooltip";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export function StockHealthAnalyzer() {
@@ -145,7 +146,13 @@ export function StockHealthAnalyzer() {
                     {/* Technical Analysis */}
                     <Card className="lg:col-span-2">
                         <CardHeader className="pb-2">
-                            <CardTitle className="text-lg">技術指標 (Technical Analysis)</CardTitle>
+                            <CardTitle className="text-lg">
+                                <TermTooltip
+                                    term="技術指標 (Technical Analysis)"
+                                    explanation="利用股價、成交量等歷史數據找出規律，預測未來走勢。常見指標包括移動平均線、RSI、MACD、布林通道等。"
+                                    learnMore={[{ label: "Investopedia：技術分析入門", url: "https://www.investopedia.com/technical-analysis-4689657" }]}
+                                />
+                            </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 pt-2">
                             <div className="flex justify-between items-center border-b pb-2">
@@ -154,7 +161,13 @@ export function StockHealthAnalyzer() {
                             </div>
                             <div className="grid grid-cols-2 gap-4 mt-2">
                                 <div className="flex justify-between items-center bg-muted/50 p-2 rounded">
-                                    <span className="text-xs font-medium">5MA (週線)</span>
+                                    <span className="text-xs font-medium">
+                                        <TermTooltip
+                                            term="5MA (週線)"
+                                            explanation="最近 5 日收盤價的平均值，代表短期趨勢。股價站上均線偏多；跌破均線偏空。短均線穿越長均線形成黃金交叉（買訊）或死亡交叉（賣訊）。"
+                                            learnMore={[{ label: "Investopedia：Moving Average", url: "https://www.investopedia.com/terms/m/movingaverage.asp" }]}
+                                        />
+                                    </span>
                                     <div className="text-sm">{formatPrice(stockData.movingAverages?.MA5)} {renderMAStatus(stockData.currentPrice, stockData.movingAverages?.MA5)}</div>
                                 </div>
                                 <div className="flex justify-between items-center bg-muted/50 p-2 rounded">
@@ -182,7 +195,13 @@ export function StockHealthAnalyzer() {
                         {/* Chips / Ownership */}
                         <Card>
                             <CardHeader className="pb-2">
-                                <CardTitle className="text-lg">籌碼佈局 (Ownership Structure)</CardTitle>
+                                <CardTitle className="text-lg">
+                                <TermTooltip
+                                    term="籌碼佈局 (Ownership Structure)"
+                                    explanation="追蹤股票的持有結構：外資、投信等機構法人，以及公司內部人士的持股比率。法人持股高代表機構認可；內部人持股高代表管理層對公司有信心。"
+                                    learnMore={[{ label: "Investopedia：Institutional Investor", url: "https://www.investopedia.com/terms/i/institutionalinvestor.asp" }]}
+                                />
+                            </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-2 pt-2">
                                 <div className="flex justify-between items-center">
@@ -209,11 +228,23 @@ export function StockHealthAnalyzer() {
                             </CardHeader>
                             <CardContent className="space-y-2 pt-2">
                                 <div className="flex justify-between items-center">
-                                    <span className="text-sm text-muted-foreground">近四季 EPS (TTM)</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        <TermTooltip
+                                            term="近四季 EPS (TTM)"
+                                            explanation="過去 12 個月（四季）累計的每股盈餘。EPS = 稅後淨利 / 流通股數。數字越高代表公司每股賺越多，是評估獲利能力最基本的指標。"
+                                            learnMore={[{ label: "Investopedia：EPS", url: "https://www.investopedia.com/terms/e/eps.asp" }]}
+                                        />
+                                    </span>
                                     <span className="font-bold">{formatPrice(stockData.trailingEps)}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-sm text-muted-foreground">預估本益比 (Forward P/E)</span>
+                                    <span className="text-sm text-muted-foreground">
+                                        <TermTooltip
+                                            term="預估本益比 (Forward P/E)"
+                                            explanation="以分析師預測的未來 12 個月 EPS 計算的本益比（股價/預估EPS）。反映市場對公司未來成長的預期。數字越低可能越便宜，但需與同產業比較。"
+                                            learnMore={[{ label: "Investopedia：P/E Ratio", url: "https://www.investopedia.com/terms/p/price-earningsratio.asp" }]}
+                                        />
+                                    </span>
                                     <span className="font-bold text-yellow-500">{stockData.forwardPE ? stockData.forwardPE.toFixed(2) : '---'}</span>
                                 </div>
                                 <div className="grid grid-cols-3 gap-2 pt-2 border-t mt-2">
@@ -222,7 +253,9 @@ export function StockHealthAnalyzer() {
                                         <span className={`text-xs font-bold ${Number(stockData.revenueGrowth) >= 0 ? 'text-green-500' : 'text-red-500'}`}>{formatPercent(stockData.revenueGrowth)}</span>
                                     </div>
                                     <div className="flex flex-col items-center justify-center p-2 bg-muted/30 rounded">
-                                        <span className="text-[10px] text-muted-foreground mb-1">毛利率 (Gross Margin)</span>
+                                        <span className="text-[10px] text-muted-foreground mb-1">
+                                            <TermTooltip term="毛利率" explanation="(營收 - 直接成本) / 營收。反映產品競爭力與定價能力。軟體業通常 >70%，代工業較低。毛利率持續下滑需注意競爭壓力。" learnMore={[{ label: "Investopedia：Gross Margin", url: "https://www.investopedia.com/terms/g/gross_profit_margin.asp" }]} />
+                                        </span>
                                         <span className="text-xs font-bold text-blue-500">{formatPercent(stockData.grossMargins)}</span>
                                     </div>
                                     <div className="flex flex-col items-center justify-center p-2 bg-muted/30 rounded">
@@ -248,13 +281,17 @@ export function StockHealthAnalyzer() {
                             {/* Balance KPIs */}
                             <div className="flex gap-3 flex-wrap">
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-muted-foreground">負債比率</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        <TermTooltip term="負債比率" explanation="總負債 / 總資產。越低代表財務越健康。一般 <50% 較佳，但銀行業例外。需搭配流動比率評估短期償債能力。" learnMore={[{ label: "Investopedia：Debt Ratio", url: "https://www.investopedia.com/terms/d/debtratio.asp" }]} />
+                                    </span>
                                     <Badge variant={financialData.balance.debtRatio > 60 ? 'destructive' : 'default'}>
                                         {financialData.balance.debtRatio > 0 ? `${financialData.balance.debtRatio}%` : '---'}
                                     </Badge>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-muted-foreground">ROE</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        <TermTooltip term="ROE 股東權益報酬率" explanation="稅後淨利 / 股東權益。反映公司用股東的錢賺了多少。巴菲特認為好公司 ROE 應長期 >15%。" learnMore={[{ label: "Investopedia：ROE", url: "https://www.investopedia.com/terms/r/returnonequity.asp" }]} />
+                                    </span>
                                     <Badge variant={financialData.balance.roe > 15 ? 'default' : 'secondary'}>
                                         {financialData.balance.roe > 0 ? `${financialData.balance.roe}%` : '---'}
                                     </Badge>
