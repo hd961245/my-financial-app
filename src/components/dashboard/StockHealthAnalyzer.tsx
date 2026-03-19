@@ -14,6 +14,8 @@ export function StockHealthAnalyzer() {
     const [loading, setLoading] = useState(false);
     const [stockData, setStockData] = useState<any>(null);
     const [financialData, setFinancialData] = useState<any>(null);
+    const [analyzeData, setAnalyzeData] = useState<any>(null);
+    const [analyzeLoading, setAnalyzeLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const isTaiwanStock = (sym: string) => sym.endsWith('.TW') || sym.endsWith('.TWO') || /^\d{4,6}$/.test(sym);
@@ -44,6 +46,7 @@ export function StockHealthAnalyzer() {
         setLoading(true);
         setError(null);
         setStockData(null);
+        setAnalyzeData(null);
 
         try {
             const res = await fetch(`/api/stock-health?symbol=${query}`);
@@ -69,6 +72,15 @@ export function StockHealthAnalyzer() {
             } else {
                 setFinancialData(null);
             }
+
+            // Fetch deep technical analysis + AI verdict (may take longer due to LLM)
+            setAnalyzeLoading(true);
+            fetch(`/api/analyze?symbol=${query}`)
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d) setAnalyzeData(d); })
+                .catch(() => {})
+                .finally(() => setAnalyzeLoading(false));
+
         } catch (err) {
             setError("取得資料時發生錯誤，請稍後再試。");
         } finally {
@@ -353,6 +365,163 @@ export function StockHealthAnalyzer() {
 
                             {financialData.income?.length === 0 && financialData.dividends?.length === 0 && (
                                 <p className="text-sm text-muted-foreground">FinMind 目前無此股票財報資料</p>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Technical Indicators + AI Verdict from /api/analyze */}
+                {(analyzeLoading || analyzeData) && (
+                    <Card className="mt-4">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                                深度技術分析
+                                <Badge variant="outline">AI 解讀</Badge>
+                                {analyzeLoading && <span className="text-xs text-muted-foreground animate-pulse">AI 分析中...</span>}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {analyzeData && (
+                                <>
+                                {/* AI Verdict Card */}
+                                {analyzeData.aiAnalysis && (
+                                    <div className={`rounded-lg p-4 border-2 ${
+                                        analyzeData.aiAnalysis.verdict?.includes('多頭') || analyzeData.aiAnalysis.verdict === '偏多'
+                                            ? 'border-green-500 bg-green-500/5'
+                                            : analyzeData.aiAnalysis.verdict?.includes('空頭') || analyzeData.aiAnalysis.verdict === '偏空'
+                                            ? 'border-red-500 bg-red-500/5'
+                                            : 'border-yellow-500 bg-yellow-500/5'
+                                    }`}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className={`text-xl font-bold ${
+                                                analyzeData.aiAnalysis.verdict?.includes('多頭') || analyzeData.aiAnalysis.verdict === '偏多'
+                                                    ? 'text-green-500'
+                                                    : analyzeData.aiAnalysis.verdict?.includes('空頭') || analyzeData.aiAnalysis.verdict === '偏空'
+                                                    ? 'text-red-500'
+                                                    : 'text-yellow-500'
+                                            }`}>{analyzeData.aiAnalysis.verdict}</span>
+                                            <Badge variant="secondary">信心度：{analyzeData.aiAnalysis.confidence}</Badge>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground leading-relaxed">{analyzeData.aiAnalysis.summary}</p>
+                                        {analyzeData.aiAnalysis.keySignals?.length > 0 && (
+                                            <div className="mt-3">
+                                                <p className="text-xs font-semibold mb-1">關鍵訊號</p>
+                                                <ul className="space-y-1">
+                                                    {analyzeData.aiAnalysis.keySignals.map((s: string, i: number) => (
+                                                        <li key={i} className="text-xs flex gap-1.5 items-start">
+                                                            <span className="text-blue-400 mt-0.5">▸</span>{s}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {analyzeData.aiAnalysis.risks?.length > 0 && (
+                                            <div className="mt-3">
+                                                <p className="text-xs font-semibold mb-1 text-red-400">風險提示</p>
+                                                <ul className="space-y-1">
+                                                    {analyzeData.aiAnalysis.risks.map((r: string, i: number) => (
+                                                        <li key={i} className="text-xs flex gap-1.5 items-start text-red-400/80">
+                                                            <span className="mt-0.5">⚠</span>{r}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {analyzeData.aiAnalysis.suggestion && (
+                                            <div className="mt-3 pt-3 border-t border-dashed">
+                                                <p className="text-xs font-semibold mb-1">操作方向</p>
+                                                <p className="text-xs text-muted-foreground">{analyzeData.aiAnalysis.suggestion}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Technical Indicators Grid */}
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    {/* RSI */}
+                                    <div className="bg-muted/40 rounded-lg p-3">
+                                        <p className="text-xs text-muted-foreground mb-1">
+                                            <TermTooltip term="RSI 14" explanation="相對強弱指數（0-100）。>70 超買，<30 超賣。用於判斷短期動能強弱與可能的反轉點。" learnMore={[{ label: "Investopedia：RSI", url: "https://www.investopedia.com/terms/r/rsi.asp" }]} />
+                                        </p>
+                                        <p className={`text-lg font-bold ${
+                                            analyzeData.technical?.rsi > 70 ? 'text-red-500'
+                                            : analyzeData.technical?.rsi < 30 ? 'text-green-500'
+                                            : 'text-foreground'
+                                        }`}>{analyzeData.technical?.rsi?.toFixed(1) ?? '---'}</p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            {analyzeData.technical?.rsi > 70 ? '超買區' : analyzeData.technical?.rsi < 30 ? '超賣區' : '中性'}
+                                            {' · '}
+                                            {analyzeData.technical?.rsiDirection === 'rising' ? '↑上升' : analyzeData.technical?.rsiDirection === 'falling' ? '↓下降' : '→持平'}
+                                        </p>
+                                    </div>
+
+                                    {/* MACD */}
+                                    <div className="bg-muted/40 rounded-lg p-3">
+                                        <p className="text-xs text-muted-foreground mb-1">
+                                            <TermTooltip term="MACD" explanation="趨勢動能指標。MACD 線上穿訊號線為黃金交叉（買訊），下穿為死亡交叉（賣訊）。柱狀圖反映動能強度。" learnMore={[{ label: "Investopedia：MACD", url: "https://www.investopedia.com/terms/m/macd.asp" }]} />
+                                        </p>
+                                        <p className={`text-sm font-bold ${
+                                            analyzeData.technical?.macdCrossover === 'golden' ? 'text-green-500'
+                                            : analyzeData.technical?.macdCrossover === 'death' ? 'text-red-500'
+                                            : 'text-foreground'
+                                        }`}>
+                                            {analyzeData.technical?.macdCrossover === 'golden' ? '黃金交叉'
+                                            : analyzeData.technical?.macdCrossover === 'death' ? '死亡交叉'
+                                            : '無交叉'}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground mt-0.5">
+                                            柱：{analyzeData.technical?.macdHistogramTrend === 'increasing' ? '↑擴大' : analyzeData.technical?.macdHistogramTrend === 'decreasing' ? '↓縮小' : '→持平'}
+                                        </p>
+                                    </div>
+
+                                    {/* Bollinger */}
+                                    <div className="bg-muted/40 rounded-lg p-3">
+                                        <p className="text-xs text-muted-foreground mb-1">
+                                            <TermTooltip term="布林通道" explanation="以 20 日均線為中軌，±2 標準差為上下軌。股價觸碰上軌偏強（超買）、觸碰下軌偏弱（超賣）。通道收窄代表即將爆發。" learnMore={[{ label: "Investopedia：Bollinger Bands", url: "https://www.investopedia.com/terms/b/bollingerbands.asp" }]} />
+                                        </p>
+                                        <p className={`text-xs font-bold ${
+                                            analyzeData.technical?.bbPosition?.includes('上軌') ? 'text-red-400'
+                                            : analyzeData.technical?.bbPosition?.includes('下軌') ? 'text-green-400'
+                                            : 'text-foreground'
+                                        }`}>{analyzeData.technical?.bbPosition ?? '---'}</p>
+                                        {analyzeData.technical?.bbNarrow && (
+                                            <p className="text-xs text-yellow-500 mt-0.5">通道收窄⚡</p>
+                                        )}
+                                    </div>
+
+                                    {/* Volume-Price */}
+                                    <div className="bg-muted/40 rounded-lg p-3">
+                                        <p className="text-xs text-muted-foreground mb-1">量價關係</p>
+                                        <p className="text-xs font-bold leading-tight">{analyzeData.technical?.volumePriceConfirmation?.split('（')[0] ?? '---'}</p>
+                                        {analyzeData.technical?.isVolumeBurst && (
+                                            <Badge variant="destructive" className="text-[10px] mt-1">爆量</Badge>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Signal Conflicts */}
+                                {analyzeData.technical?.signalConflicts?.length > 0 && (
+                                    <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/30 p-3">
+                                        <p className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 mb-2">訊號衝突 / 注意事項</p>
+                                        <ul className="space-y-1">
+                                            {analyzeData.technical.signalConflicts.map((c: string, i: number) => (
+                                                <li key={i} className="text-xs text-yellow-700 dark:text-yellow-300 flex gap-1.5 items-start">
+                                                    <span className="mt-0.5 shrink-0">⚡</span>{c}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                </>
+                            )}
+
+                            {analyzeLoading && !analyzeData && (
+                                <div className="space-y-2">
+                                    <div className="h-24 bg-muted/30 rounded-lg animate-pulse" />
+                                    <div className="grid grid-cols-4 gap-3">
+                                        {[...Array(4)].map((_, i) => <div key={i} className="h-16 bg-muted/30 rounded-lg animate-pulse" />)}
+                                    </div>
+                                </div>
                             )}
                         </CardContent>
                     </Card>
