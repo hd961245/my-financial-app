@@ -14,6 +14,7 @@ import { StockScreener } from "@/components/dashboard/StockScreener";
 import { DailyRecommendation } from "@/components/dashboard/DailyRecommendation";
 import { PriceAlerts } from "@/components/dashboard/PriceAlerts";
 import { LearningCenter } from "@/components/dashboard/LearningCenter";
+import { UserGuide } from "@/components/dashboard/UserGuide";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -165,6 +166,7 @@ export default function Home() {
             <TabsTrigger value="screener">選股篩選</TabsTrigger>
             <TabsTrigger value="daily">每日推薦</TabsTrigger>
             <TabsTrigger value="learning">📚 學習中心</TabsTrigger>
+            <TabsTrigger value="guide">📖 使用說明</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-4">
@@ -313,6 +315,10 @@ export default function Home() {
 
           <TabsContent value="learning" className="space-y-4">
             <LearningCenter />
+          </TabsContent>
+
+          <TabsContent value="guide" className="space-y-4">
+            <UserGuide />
           </TabsContent>
 
         </Tabs>
