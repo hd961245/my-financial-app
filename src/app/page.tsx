@@ -155,6 +155,7 @@ export default function Home() {
         </div>
 
         <Tabs defaultValue="overview" className="space-y-4">
+          <div className="overflow-x-auto pb-1">
           <TabsList>
             <TabsTrigger value="overview">市場動態</TabsTrigger>
             <TabsTrigger value="capital">資金動向</TabsTrigger>
@@ -168,6 +169,7 @@ export default function Home() {
             <TabsTrigger value="learning">📚 學習中心</TabsTrigger>
             <TabsTrigger value="guide">📖 使用說明</TabsTrigger>
           </TabsList>
+          </div>
 
           <TabsContent value="overview" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
