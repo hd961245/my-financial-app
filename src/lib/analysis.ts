@@ -1,5 +1,6 @@
 import YahooFinance from 'yahoo-finance2';
 import { SMA, RSI, MACD, BollingerBands } from 'technicalindicators';
+import OpenAI from 'openai';
 
 const yahooFinance = new YahooFinance();
 
@@ -187,6 +188,75 @@ export async function analyzeStock(symbolParam: string) {
         console.warn("Could not fetch news for", querySymbol);
     }
 
+    // 5. AI 解讀（LLM 分析技術指標）
+    let aiAnalysis: {
+        verdict: string;
+        confidence: string;
+        summary: string;
+        keySignals: string[];
+        risks: string[];
+        suggestion: string;
+    } | null = null;
+
+    try {
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
+        if (process.env.OPENAI_API_KEY) {
+            const technicalSummary = `
+股票：${quote.shortName || querySymbol}（${querySymbol}）
+當前股價：${currentPrice}，當日漲跌幅：${quote.regularMarketChangePercent != null ? (quote.regularMarketChangePercent * 100).toFixed(2) : 'N/A'}%
+
+【均線趨勢】${trend}
+  5MA: ${currentSma5?.toFixed(2) ?? 'N/A'} | 20MA: ${currentSma20?.toFixed(2) ?? 'N/A'} | 60MA: ${currentSma60?.toFixed(2) ?? 'N/A'}
+
+【RSI 14】${currentRsi?.toFixed(1) ?? 'N/A'}（方向：${rsiDirection === 'rising' ? '上升' : rsiDirection === 'falling' ? '下降' : '持平'}）
+
+【MACD(12,26,9)】
+  MACD 線：${currentMacd?.MACD?.toFixed(3) ?? 'N/A'} | 訊號線：${currentMacd?.signal?.toFixed(3) ?? 'N/A'} | 柱狀：${currentMacd?.histogram?.toFixed(3) ?? 'N/A'}
+  交叉狀態：${macdCrossover === 'golden' ? '黃金交叉（買訊）' : macdCrossover === 'death' ? '死亡交叉（賣訊）' : '無交叉'}
+  柱狀趨勢：${macdHistogramTrend === 'increasing' ? '擴大（動能增強）' : macdHistogramTrend === 'decreasing' ? '縮小（動能減弱）' : '持平'}
+
+【布林通道(20,2σ)】
+  上軌：${currentBB?.upper?.toFixed(2) ?? 'N/A'} | 中軌：${currentBB?.middle?.toFixed(2) ?? 'N/A'} | 下軌：${currentBB?.lower?.toFixed(2) ?? 'N/A'}
+  股價位置：${bbPosition}${bbNarrow ? '（通道收窄，即將大幅波動）' : ''}
+
+【量價關係】${volumePriceConfirmation}
+  當日成交量：${currentVol.toLocaleString()} | 20日均量：${currentAvgVol.toFixed(0)}${isVolumeBurst ? '（爆量）' : ''}
+
+【訊號衝突】${signalConflicts.length > 0 ? signalConflicts.join('；') : '無明顯衝突'}
+`.trim();
+
+            const response = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                temperature: 0.4,
+                response_format: { type: 'json_object' },
+                messages: [
+                    {
+                        role: 'system',
+                        content: `你是一位專業的技術分析師，根據提供的技術指標數據，輸出結構化 JSON 分析報告。
+請嚴格輸出以下 JSON 格式，所有欄位使用繁體中文：
+{
+  "verdict": "偏多" | "強勢多頭" | "中性觀望" | "偏空" | "強勢空頭",
+  "confidence": "高" | "中" | "低",
+  "summary": "60-100字的白話技術面總結，說明目前整體態勢",
+  "keySignals": ["最重要的正向/負向訊號1（20字內）", "訊號2", "訊號3"],
+  "risks": ["主要風險點1（20字內）", "風險點2"],
+  "suggestion": "30-50字的操作建議（不給絕對買賣建議，只給策略方向）"
+}`
+                    },
+                    {
+                        role: 'user',
+                        content: `請根據以下技術指標分析並輸出 JSON：\n\n${technicalSummary}`
+                    }
+                ]
+            });
+
+            const raw = response.choices[0].message.content || '{}';
+            aiAnalysis = JSON.parse(raw);
+        }
+    } catch (e) {
+        console.warn('AI analysis failed, returning without AI verdict:', e);
+    }
+
     return {
         symbol: querySymbol,
         name: quote.shortName || quote.longName || querySymbol,
@@ -211,6 +281,7 @@ export async function analyzeStock(symbolParam: string) {
             volumePriceConfirmation,
             signalConflicts,
         },
+        aiAnalysis,
         news
     };
 }
