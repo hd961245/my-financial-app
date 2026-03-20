@@ -85,7 +85,7 @@ export async function GET(request: Request) {
 
             analysisReports.push(`
 📍 **${analysis.name} (${analysis.symbol})**
-- **最新收盤價**：${analysis.price} (${analysis.changePercent >= 0 ? '+' : ''}${analysis.changePercent?.toFixed(2)}%)
+- **最新收盤價**：${analysis.price} (${analysis.changePercent >= 0 ? '+' : ''}${((analysis.changePercent ?? 0) * 100).toFixed(2)}%)
 - **目標價距離**：${gapToTargetStr}
 - **技術面趨勢**：${analysis.technical.trend} (月線 ${analysis.technical.sma20?.toFixed(2)}, 季線 ${analysis.technical.sma60?.toFixed(2)})
 - **量能判定**：${analysis.technical.isVolumeBurst ? '🔥 近日出現爆量' : '量能平穩'}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import YahooFinance from 'yahoo-finance2';
+import { getCachedQuote, setCachedQuote, TTL } from '@/lib/quote-cache';
 
 const yahooFinance = new YahooFinance();
 
@@ -75,17 +76,23 @@ export async function GET() {
             groupedHoldings[h.categoryName].push(h);
         });
 
-        // Fetch live quotes for active unique symbols (including watchlist) in parallel
+        // Fetch live quotes — 優先使用快取（60s TTL），避免 10s poll 重複打 Yahoo Finance
         const uniqueSymbols = Array.from(new Set([...flatHoldings, ...watchlistHoldings].map(h => h.symbol)));
         const quoteEntries = await Promise.all(
             uniqueSymbols.map(async (sym) => {
                 try {
+                    const cacheKey = `yf:quote:${sym}`;
+                    const cached = getCachedQuote<{ regularMarketPrice: number; regularMarketChangePercent: number }>(cacheKey);
+                    if (cached) return [sym, cached] as const;
+
                     const quote = await yahooFinance.quote(sym);
                     if (quote) {
-                        return [sym, {
+                        const result = {
                             regularMarketPrice: quote.regularMarketPrice || 0,
                             regularMarketChangePercent: quote.regularMarketChangePercent || 0,
-                        }] as const;
+                        };
+                        setCachedQuote(cacheKey, result, TTL.QUOTE);
+                        return [sym, result] as const;
                     }
                 } catch (e) {
                     console.error(`Failed to fetch quote in portfolio backend for ${sym}:`, e);
