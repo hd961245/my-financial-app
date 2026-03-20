@@ -16,6 +16,7 @@ export async function GET() {
 
         const holdingsMap: Record<string, { symbol: string, categoryId: string | null, categoryName: string, shares: number, totalCost: number }> = {};
         let totalRealizedPnL = 0;
+        const realizedPnLPerTrade: Record<number, number> = {};
 
         trades.forEach((trade: any) => {
             const sym = trade.symbol;
@@ -37,6 +38,7 @@ export async function GET() {
                     const avgCost = holdingsMap[key].totalCost / currentShares;
                     const realizedGain = (trade.price - avgCost) * trade.shares;
                     totalRealizedPnL += realizedGain;
+                    realizedPnLPerTrade[trade.id] = realizedGain;
 
                     holdingsMap[key].shares -= trade.shares;
                     holdingsMap[key].totalCost -= avgCost * trade.shares;
@@ -105,11 +107,12 @@ export async function GET() {
         );
 
         return NextResponse.json({
-            holdings: groupedHoldings, // Now sending grouped object
-            flatHoldings,              // Keeping flat array just in case
-            watchlistHoldings,         // Items with 0 shares
+            holdings: groupedHoldings,       // Grouped by category
+            flatHoldings,                    // Flat array
+            watchlistHoldings,               // 0-share items
             trades: trades.reverse(),
             realizedPnL: totalRealizedPnL,
+            realizedPnLPerTrade,             // { tradeId: gainLoss }
             quotes
         });
     } catch (error) {

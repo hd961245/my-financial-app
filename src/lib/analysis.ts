@@ -44,7 +44,7 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
 
     // 2. Fetch Historical Data（5 分鐘快取，盤中變化不頻繁）
     const period1 = new Date();
-    period1.setDate(period1.getDate() - 150);
+    period1.setDate(period1.getDate() - 360);
     const historicalCacheKey = `yf:historical:${querySymbol}`;
     let historical = getCachedQuote<Awaited<ReturnType<typeof yahooFinance.historical>>>(historicalCacheKey);
 
