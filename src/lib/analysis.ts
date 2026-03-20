@@ -1,12 +1,9 @@
 import YahooFinance from 'yahoo-finance2';
 import { SMA, RSI, MACD, BollingerBands } from 'technicalindicators';
 import OpenAI from 'openai';
-import { getCachedQuote, setCachedQuote } from './quote-cache';
+import { getCachedQuote, setCachedQuote, TTL } from './quote-cache';
 
 const yahooFinance = new YahooFinance();
-
-// TTL for full technical analysis cache (5 minutes)
-const ANALYSIS_CACHE_TTL = 5 * 60 * 1000;
 
 export async function analyzeStock(symbolParam: string, options?: { skipAI?: boolean }) {
     // Resolve Chinese names to symbols if necessary using our heuristic
@@ -31,7 +28,7 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
         querySymbol = `${querySymbol}.TW`;
     }
 
-    // 1. Fetch Quote（帶快取）
+    // 1. Fetch Quote（60s 快取）
     let quote;
     try {
         const cachedQuote = getCachedQuote<typeof quote>(`yf:quote:${querySymbol}`);
@@ -39,15 +36,15 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
             quote = cachedQuote;
         } else {
             quote = await yahooFinance.quote(querySymbol);
-            setCachedQuote(`yf:quote:${querySymbol}`, quote);
+            setCachedQuote(`yf:quote:${querySymbol}`, quote, TTL.QUOTE);
         }
     } catch (e) {
         throw new Error(`找不到代號 ${querySymbol} 的即時資訊`);
     }
 
-    // 2. Fetch Historical Data（帶快取，TTL 5 分鐘）
+    // 2. Fetch Historical Data（5 分鐘快取，盤中變化不頻繁）
     const period1 = new Date();
-    period1.setDate(period1.getDate() - 150); // Get enough padding for 60-day SMA
+    period1.setDate(period1.getDate() - 150);
     const historicalCacheKey = `yf:historical:${querySymbol}`;
     let historical = getCachedQuote<Awaited<ReturnType<typeof yahooFinance.historical>>>(historicalCacheKey);
 
@@ -57,8 +54,7 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
             period2: new Date().toISOString().split('T')[0],
             interval: '1d'
         });
-        // Use a longer TTL for historical data: override by storing with custom expiry via raw cache
-        setCachedQuote(historicalCacheKey, historical);
+        setCachedQuote(historicalCacheKey, historical, TTL.HISTORICAL);
     }
 
     if (!historical || historical.length === 0) {
@@ -218,7 +214,11 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
 
     try {
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
-        if (!options?.skipAI && process.env.OPENAI_API_KEY) {
+        const aiCacheKey = `ai:verdict:${querySymbol}`;
+        const cachedAI = !options?.skipAI ? getCachedQuote<typeof aiAnalysis>(aiCacheKey) : null;
+        if (cachedAI) {
+            aiAnalysis = cachedAI;
+        } else if (!options?.skipAI && process.env.OPENAI_API_KEY) {
             const technicalSummary = `
 股票：${quote.shortName || querySymbol}（${querySymbol}）
 當前股價：${currentPrice}，當日漲跌幅：${quote.regularMarketChangePercent != null ? (quote.regularMarketChangePercent * 100).toFixed(2) : 'N/A'}%
@@ -270,12 +270,13 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
 
             const raw = response.choices[0].message.content || '{}';
             aiAnalysis = JSON.parse(raw);
+            if (aiAnalysis) setCachedQuote(aiCacheKey, aiAnalysis, TTL.AI);
         }
     } catch (e) {
         console.warn('AI analysis failed, returning without AI verdict:', e);
     }
 
-    return {
+    const result = {
         symbol: querySymbol,
         name: quote.shortName || quote.longName || querySymbol,
         price: currentPrice,
@@ -302,4 +303,6 @@ export async function analyzeStock(symbolParam: string, options?: { skipAI?: boo
         aiAnalysis,
         news
     };
+
+    return result;
 }
