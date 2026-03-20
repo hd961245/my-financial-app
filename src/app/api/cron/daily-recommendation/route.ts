@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { analyzeStock } from '@/lib/analysis';
-import OpenAI from 'openai';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { claudeJSON } from '@/lib/claude';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -29,7 +28,7 @@ interface AIResponse {
 function verifyCronSecret(request: Request): boolean {
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret) return true; // No secret configured, allow in dev
+    if (!cronSecret) return true;
     return authHeader === `Bearer ${cronSecret}`;
 }
 
@@ -59,7 +58,7 @@ export async function GET(request: Request) {
             }
         }
 
-        // Also pull Google Sheets watchlist if configured
+        // Pull Google Sheets watchlist if configured
         try {
             const setting = await prisma.systemSetting.findUnique({ where: { key: 'GOOGLE_SHEET_ID' } });
             if (setting?.value) {
@@ -86,17 +85,14 @@ export async function GET(request: Request) {
 
         const toAnalyze = stockEntries.slice(0, 15);
 
-        // 2. Analyze each stock — 並行執行，skipAI 避免重複 LLM 呼叫（Cron 有自己的 AI）
+        // 2. Analyze each stock
         const settled = await Promise.allSettled(
             toAnalyze.map(entry => analyzeStock(entry.symbol, { skipAI: true }).then(analysis => ({ entry, analysis })))
         );
         const analysisResults: { entry: StockEntry; analysis: any }[] = [];
         for (const result of settled) {
-            if (result.status === 'fulfilled') {
-                analysisResults.push(result.value);
-            } else {
-                console.warn('Failed to analyze stock:', result.reason);
-            }
+            if (result.status === 'fulfilled') analysisResults.push(result.value);
+            else console.warn('Failed to analyze stock:', result.reason);
         }
 
         if (analysisResults.length === 0) {
@@ -147,38 +143,14 @@ export async function GET(request: Request) {
 4. spotlight 選 1-3 檔最值得注意的股票
 5. 全部使用繁體中文`;
 
-        let parsed: AIResponse | null = null;
+        const userPrompt = `今日掃描資料：\n${JSON.stringify(stockSummaries, null, 2)}\n\n請回傳 JSON 格式的今日操作建議。`;
 
-        // Try OpenAI with json_object mode
+        let parsed: AIResponse;
         try {
-            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || 'dummy_key' });
-            const completion = await openai.chat.completions.create({
-                model: 'gpt-4o-mini',
-                response_format: { type: 'json_object' },
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: `今日掃描資料：\n${JSON.stringify(stockSummaries, null, 2)}\n\n請回傳 JSON 格式的今日操作建議。` },
-                ],
-                temperature: 0.7,
-            });
-            parsed = JSON.parse(completion.choices[0].message.content || '{}');
-        } catch (openAiErr) {
-            console.warn('OpenAI failed, falling back to Gemini:', openAiErr);
-            try {
-                const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'dummy_key');
-                const model = genAI.getGenerativeModel({
-                    model: 'gemini-2.5-flash',
-                    systemInstruction: systemPrompt,
-                    generationConfig: { responseMimeType: 'application/json' } as any,
-                });
-                const result = await model.generateContent(
-                    `今日掃描資料：\n${JSON.stringify(stockSummaries, null, 2)}\n\n請回傳 JSON 格式的今日操作建議。`
-                );
-                parsed = JSON.parse(result.response.text());
-            } catch (geminiErr) {
-                console.error('Gemini also failed:', geminiErr);
-                return NextResponse.json({ error: 'AI 分析失敗，請稍後重試' }, { status: 500 });
-            }
+            parsed = await claudeJSON<AIResponse>(systemPrompt, userPrompt, 4096);
+        } catch (err) {
+            console.error('Claude JSON parsing failed:', err);
+            return NextResponse.json({ error: 'AI 分析失敗，請稍後重試' }, { status: 500 });
         }
 
         if (!parsed || !Array.isArray(parsed.stocks)) {
@@ -197,11 +169,8 @@ export async function GET(request: Request) {
         await prisma.dailyRecommendation.deleteMany({
             where: { date: { gte: today, lt: new Date(today.getTime() + 86400000) } },
         });
-        await prisma.dailyReport.deleteMany({
-            where: { date: today },
-        });
+        await prisma.dailyReport.deleteMany({ where: { date: today } });
 
-        // Save full report
         await prisma.dailyReport.create({
             data: {
                 date: today,
@@ -211,7 +180,6 @@ export async function GET(request: Request) {
             },
         });
 
-        // Save per-stock recommendations
         const stockRecMap = new Map(parsed.stocks.map(s => [s.symbol, s]));
 
         for (const { entry, analysis } of analysisResults) {
@@ -259,11 +227,9 @@ export async function GET(request: Request) {
         if (discordWebhookUrl) {
             try {
                 let discordMsg = `📋 **每日 AI 操作建議** (${today.toLocaleDateString('zh-TW')})\n\n${parsed.summary}\n\n`;
-
                 if (triggeredAlerts.length > 0) {
                     discordMsg += `**⚠️ 到價提醒：**\n${triggeredAlerts.join('\n')}\n\n`;
                 }
-
                 const reportSnippet = parsed.fullReport.length > 1500
                     ? parsed.fullReport.substring(0, 1495) + '...'
                     : parsed.fullReport;
