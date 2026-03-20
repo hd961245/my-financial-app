@@ -57,36 +57,40 @@ export async function GET(request: Request) {
         // We limit to first 10 stocks to avoid timeout / rate limits during the cron job
         const stocksToAnalyze = rows.slice(0, 10);
 
-        for (const row of stocksToAnalyze) {
-            const symbolValue = String(row[symbolCol]).trim();
-            if (!symbolValue) continue;
+        // 並行分析所有股票，skipAI 避免每支個別呼叫 LLM（週報有自己的 AI）
+        const settled = await Promise.allSettled(
+            stocksToAnalyze
+                .map(row => ({ row, symbolValue: String(row[symbolCol]).trim() }))
+                .filter(({ symbolValue }) => !!symbolValue)
+                .map(({ row, symbolValue }) =>
+                    analyzeStock(symbolValue, { skipAI: true }).then(analysis => ({ row, symbolValue, analysis }))
+                )
+        );
 
-            try {
-                const analysis = await analyzeStock(symbolValue);
-                const targetPriceRaw = targetPriceCol ? row[targetPriceCol] : null;
-                const targetPriceStr = targetPriceRaw ? String(targetPriceRaw).replace(/[^0-9.]/g, '') : null;
-                const targetPrice = targetPriceStr ? parseFloat(targetPriceStr) : null;
+        for (const result of settled) {
+            if (result.status === 'rejected') {
+                console.warn('Failed to analyze stock:', result.reason);
+                continue;
+            }
+            const { row, analysis } = result.value;
+            const targetPriceRaw = targetPriceCol ? row[targetPriceCol] : null;
+            const targetPriceStr = targetPriceRaw ? String(targetPriceRaw).replace(/[^0-9.]/g, '') : null;
+            const targetPrice = targetPriceStr ? parseFloat(targetPriceStr) : null;
 
-                let gapToTargetStr = "未設定目標價";
-                if (targetPrice && analysis.price) {
-                    const diffPercent = ((targetPrice - analysis.price) / analysis.price) * 100;
-                    gapToTargetStr = `距離目標價 ${targetPrice} 差 ${diffPercent > 0 ? '+' : ''}${diffPercent.toFixed(2)}%`;
-                }
+            let gapToTargetStr = "未設定目標價";
+            if (targetPrice && analysis.price) {
+                const diffPercent = ((targetPrice - analysis.price) / analysis.price) * 100;
+                gapToTargetStr = `距離目標價 ${targetPrice} 差 ${diffPercent > 0 ? '+' : ''}${diffPercent.toFixed(2)}%`;
+            }
 
-                // Compile stock insight string
-                const stockInsight = `
+            analysisReports.push(`
 📍 **${analysis.name} (${analysis.symbol})**
 - **最新收盤價**：${analysis.price} (${analysis.changePercent >= 0 ? '+' : ''}${analysis.changePercent?.toFixed(2)}%)
 - **目標價距離**：${gapToTargetStr}
 - **技術面趨勢**：${analysis.technical.trend} (月線 ${analysis.technical.sma20?.toFixed(2)}, 季線 ${analysis.technical.sma60?.toFixed(2)})
 - **量能判定**：${analysis.technical.isVolumeBurst ? '🔥 近日出現爆量' : '量能平穩'}
 - **近期新聞焦點**：${analysis.news.length > 0 ? analysis.news[0].title : '無'}
-                `.trim();
-
-                analysisReports.push(stockInsight);
-            } catch (err) {
-                console.warn(`Failed to analyze ${symbolValue}:`, err);
-            }
+            `.trim());
         }
 
         if (analysisReports.length === 0) {
