@@ -1,4 +1,5 @@
 import YahooFinance from 'yahoo-finance2';
+import { getCachedQuote, setCachedQuote, TTL } from './quote-cache';
 
 const yahooFinance = new YahooFinance();
 
@@ -11,6 +12,10 @@ export type ChartDataPoint = {
 // 1. Yahoo Finance Provider (Fallback/Global)
 // ==========================================
 export async function fetchYahooHistory(symbol: string, days: number = 180): Promise<ChartDataPoint[]> {
+    const cacheKey = `dp:yahoo:${symbol}:${days}`;
+    const cached = getCachedQuote<ChartDataPoint[]>(cacheKey);
+    if (cached) return cached;
+
     const period1 = new Date();
     period1.setDate(period1.getDate() - days);
 
@@ -24,12 +29,15 @@ export async function fetchYahooHistory(symbol: string, days: number = 180): Pro
         throw new Error("Yahoo Finance 無法取得歷史價格");
     }
 
-    return historical
+    const result = historical
         .filter(h => h.close !== null)
         .map(h => ({
             date: h.date.toISOString().split('T')[0],
             close: Number(h.close?.toFixed(2))
         }));
+
+    setCachedQuote(cacheKey, result, TTL.HISTORICAL);
+    return result;
 }
 
 // ==========================================
@@ -38,13 +46,15 @@ export async function fetchYahooHistory(symbol: string, days: number = 180): Pro
 // FinMind API URL: https://api.finmindtrade.com/api/v4/data
 // dataset: TaiwanStockPrice
 export async function fetchFinMindHistory(symbol: string, days: number = 180): Promise<ChartDataPoint[]> {
-    // FinMind expects symbols without .TW, e.g., '2330'
     const rawSymbol = symbol.replace('.TW', '').replace('.TWO', '');
 
-    // Only attempt FinMind for typical Taiwanese stock codes (numbers) or ETF codes
     if (!/^[0-9A-Z]+$/.test(rawSymbol)) {
         throw new Error("此代號不支援 FinMind 查詢");
     }
+
+    const cacheKey = `dp:finmind:${rawSymbol}:${days}`;
+    const cached = getCachedQuote<ChartDataPoint[]>(cacheKey);
+    if (cached) return cached;
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -60,10 +70,13 @@ export async function fetchFinMindHistory(symbol: string, days: number = 180): P
             throw new Error(`FinMind 無法取得資料: ${data.msg}`);
         }
 
-        return data.data.map((item: any) => ({
-            date: item.date, // format is typically 'YYYY-MM-DD'
+        const result = data.data.map((item: any) => ({
+            date: item.date,
             close: Number(item.close)
         }));
+
+        setCachedQuote(cacheKey, result, TTL.HISTORICAL);
+        return result;
     } catch (error: any) {
         throw new Error(`FinMind 請求失敗: ${error.message}`);
     }

@@ -26,10 +26,15 @@ export function StockHealthAnalyzer() {
 
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`/api/stock-health?symbol=${query}`);
-                if (res.ok) {
-                    const data = await res.json();
-                    setStockData(data);
+                const [healthRes, analyzeRes] = await Promise.allSettled([
+                    fetch(`/api/stock-health?symbol=${query}`),
+                    fetch(`/api/analyze?symbol=${query}`),
+                ]);
+                if (healthRes.status === 'fulfilled' && healthRes.value.ok) {
+                    setStockData(await healthRes.value.json());
+                }
+                if (analyzeRes.status === 'fulfilled' && analyzeRes.value.ok) {
+                    setAnalyzeData(await analyzeRes.value.json());
                 }
             } catch (err) {
                 console.error("Auto-refresh failed", err);

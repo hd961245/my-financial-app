@@ -15,6 +15,7 @@ import { DailyRecommendation } from "@/components/dashboard/DailyRecommendation"
 import { PriceAlerts } from "@/components/dashboard/PriceAlerts";
 import { LearningCenter } from "@/components/dashboard/LearningCenter";
 import { UserGuide } from "@/components/dashboard/UserGuide";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
@@ -114,7 +115,8 @@ export default function Home() {
   const renderCard = (title: string, symbol: string, icon: React.ReactNode) => {
     const data = indices[symbol];
     const price = data?.regularMarketPrice?.toFixed(2) || "...";
-    const change = data?.regularMarketChangePercent?.toFixed(2) || "0.00";
+    // regularMarketChangePercent is a decimal fraction (e.g. 0.015 = 1.5%)
+    const change = ((data?.regularMarketChangePercent ?? 0) * 100).toFixed(2);
     const isUp = Number(change) >= 0;
 
     return (
@@ -245,21 +247,21 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="capital" className="space-y-4">
-            <CapitalFlowTracker />
+            <ErrorBoundary name="資金動向"><CapitalFlowTracker /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="stocks" className="space-y-4">
-            <StockHealthAnalyzer />
+            <ErrorBoundary name="個股健康度"><StockHealthAnalyzer /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="portfolio" className="space-y-4">
-            <PortfolioTracker />
+            <ErrorBoundary name="投資組合"><PortfolioTracker /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="custom" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
               <div>
-                <DataSourceManager />
+                <ErrorBoundary name="自訂資料源"><DataSourceManager /></ErrorBoundary>
               </div>
               <Card>
                 <CardHeader>
@@ -297,26 +299,26 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="watchlist" className="space-y-4">
-            <GoogleSheetsTracker />
+            <ErrorBoundary name="自選股清單"><GoogleSheetsTracker /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="backtest" className="space-y-4">
-            <Backtester />
+            <ErrorBoundary name="策略回測"><Backtester /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="screener" className="space-y-4">
-            <StockScreener />
+            <ErrorBoundary name="選股篩選"><StockScreener /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="daily" className="space-y-4">
             <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-              <DailyRecommendation />
-              <PriceAlerts />
+              <ErrorBoundary name="每日推薦"><DailyRecommendation /></ErrorBoundary>
+              <ErrorBoundary name="價格警報"><PriceAlerts /></ErrorBoundary>
             </div>
           </TabsContent>
 
           <TabsContent value="learning" className="space-y-4">
-            <LearningCenter />
+            <ErrorBoundary name="學習中心"><LearningCenter /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="guide" className="space-y-4">
