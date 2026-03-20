@@ -2,14 +2,21 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import Parser from 'rss-parser';
 import * as cheerio from 'cheerio';
+import { getCachedQuote, setCachedQuote } from '@/lib/quote-cache';
 
 const parser = new Parser();
 const FETCH_TIMEOUT_MS = 10000;
+// 自訂訂閱源快取 5 分鐘，避免每次 60s poll 都重抓所有 RSS / HTML
+const FEED_CACHE_TTL = 5 * 60 * 1000;
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
     try {
+        const CACHE_KEY = 'custom-feed:all';
+        const cached = getCachedQuote<object[]>(CACHE_KEY);
+        if (cached) return NextResponse.json(cached);
+
         const sources = await prisma.dataSource.findMany();
 
         const feedResults = await Promise.all(sources.map(async (source) => {
@@ -56,6 +63,7 @@ export async function GET() {
         // Sort globally by pubDate descending
         allFeeds.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
+        setCachedQuote(CACHE_KEY, allFeeds, FEED_CACHE_TTL);
         return NextResponse.json(allFeeds);
     } catch (error) {
         console.error('Failed to aggregate custom feeds:', error);

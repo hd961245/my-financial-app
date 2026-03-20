@@ -47,6 +47,7 @@ export function PortfolioTracker() {
     const [trades, setTrades] = useState<TradeItem[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [realizedPnL, setRealizedPnL] = useState<number>(0);
+    const [realizedPnLPerTrade, setRealizedPnLPerTrade] = useState<Record<number, number>>({});
     const [quotes, setQuotes] = useState<Record<string, QuoteData>>({});
     const [loading, setLoading] = useState(true);
     const [isImporting, setIsImporting] = useState(false);
@@ -197,6 +198,7 @@ export function PortfolioTracker() {
             setWatchlistHoldings(data.watchlistHoldings || []);
             setTrades(data.trades || []);
             setRealizedPnL(data.realizedPnL || 0);
+            setRealizedPnLPerTrade(data.realizedPnLPerTrade || {});
             setQuotes(data.quotes || {});
         } catch (error) {
             console.error("Failed to fetch portfolio:", error);
@@ -792,24 +794,31 @@ export function PortfolioTracker() {
                                 <TableHead>數量</TableHead>
                                 <TableHead className="text-right">成交價</TableHead>
                                 <TableHead className="text-right">總金額</TableHead>
+                                <TableHead className="text-right">已實現損益</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {trades.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No trades recorded yet. Log one above!</TableCell>
+                                    <TableCell colSpan={7} className="text-center py-6 text-muted-foreground">No trades recorded yet. Log one above!</TableCell>
                                 </TableRow>
                             ) : (
-                                trades.map((trade) => (
-                                    <TableRow key={trade.id}>
-                                        <TableCell className="text-muted-foreground">{format(new Date(trade.date), 'MMM dd, yyyy')}</TableCell>
-                                        <TableCell className={`font-bold ${trade.type === 'BUY' ? 'text-green-500' : 'text-red-500'}`}>{trade.type}</TableCell>
-                                        <TableCell className="font-medium">{trade.symbol}</TableCell>
-                                        <TableCell>{trade.shares}</TableCell>
-                                        <TableCell className="text-right">${trade.price.toFixed(2)}</TableCell>
-                                        <TableCell className="text-right">${(trade.shares * trade.price).toFixed(2)}</TableCell>
-                                    </TableRow>
-                                ))
+                                trades.map((trade) => {
+                                    const pnl = trade.type === 'SELL' ? realizedPnLPerTrade[trade.id] : undefined;
+                                    return (
+                                        <TableRow key={trade.id}>
+                                            <TableCell className="text-muted-foreground">{format(new Date(trade.date), 'MMM dd, yyyy')}</TableCell>
+                                            <TableCell className={`font-bold ${trade.type === 'BUY' ? 'text-green-500' : trade.type === 'SELL' ? 'text-red-500' : 'text-muted-foreground'}`}>{trade.type}</TableCell>
+                                            <TableCell className="font-medium">{trade.symbol}</TableCell>
+                                            <TableCell>{trade.shares}</TableCell>
+                                            <TableCell className="text-right">${trade.price.toFixed(2)}</TableCell>
+                                            <TableCell className="text-right">${(trade.shares * trade.price).toFixed(2)}</TableCell>
+                                            <TableCell className={`text-right font-medium ${pnl != null ? (pnl >= 0 ? 'text-green-500' : 'text-red-500') : 'text-muted-foreground'}`}>
+                                                {pnl != null ? `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}` : '—'}
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })
                             )}
                         </TableBody>
                     </Table>

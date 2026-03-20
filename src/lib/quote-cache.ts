@@ -1,14 +1,25 @@
 /**
- * In-memory quote cache with 60-second TTL.
+ * In-memory cache with per-entry TTL.
  * Stored on the global object to persist across Next.js hot reloads in dev.
+ *
+ * TTL presets:
+ *   QUOTE_TTL      60s  — real-time price / changePercent
+ *   HISTORICAL_TTL  5m  — OHLCV history (changes only at market close)
+ *   ANALYSIS_TTL    5m  — computed technical indicators
+ *   AI_TTL         30m  — LLM verdict (same tech data → same output)
  */
+
+export const TTL = {
+  QUOTE:      60 * 1000,
+  HISTORICAL:  5 * 60 * 1000,
+  ANALYSIS:    5 * 60 * 1000,
+  AI:         30 * 60 * 1000,
+} as const;
 
 interface CacheEntry {
   data: unknown;
   expiresAt: number;
 }
-
-const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 
 declare global {
   // eslint-disable-next-line no-var
@@ -33,11 +44,22 @@ export function getCachedQuote<T>(key: string): T | null {
   return entry.data as T;
 }
 
-export function setCachedQuote(key: string, data: unknown): void {
+export function setCachedQuote(key: string, data: unknown, ttlMs: number = TTL.QUOTE): void {
   const cache = getCache();
-  cache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+  cache.set(key, { data, expiresAt: Date.now() + ttlMs });
 }
 
 export function invalidateQuote(key: string): void {
   getCache().delete(key);
+}
+
+/** 給 /api/health 使用：回傳快取統計 */
+export function getCacheStats(): { total: number; expired: number; active: number } {
+  const cache = getCache();
+  const now = Date.now();
+  let expired = 0;
+  for (const entry of cache.values()) {
+    if (now > entry.expiresAt) expired++;
+  }
+  return { total: cache.size, expired, active: cache.size - expired };
 }

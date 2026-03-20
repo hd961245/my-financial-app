@@ -79,9 +79,17 @@ export function StockChart({ symbol }: StockChartProps) {
 
             <div className="h-[300px] w-full border rounded-lg bg-white dark:bg-slate-900 p-4 flex items-center justify-center relative">
                 {loading ? (
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                        <Activity className="h-8 w-8 animate-spin text-blue-500" />
-                        <p className="text-sm animate-pulse">正在繪製股價走勢...</p>
+                    <div className="absolute inset-0 p-4 flex flex-col justify-end gap-1 overflow-hidden rounded-lg">
+                        {/* Simulated chart bars */}
+                        <div className="flex items-end gap-[2px] h-full w-full">
+                            {[40,55,48,62,70,58,65,72,60,78,82,75,88,80,92,85,90,95,88,100,92,85,96,89,94].map((h, i) => (
+                                <div key={i} className="flex-1 rounded-sm bg-muted animate-pulse" style={{ height: `${h}%`, animationDelay: `${i * 40}ms` }} />
+                            ))}
+                        </div>
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 text-muted-foreground">
+                            <Activity className="h-4 w-4 animate-spin text-blue-500" />
+                            <p className="text-xs">正在繪製股價走勢...</p>
+                        </div>
                     </div>
                 ) : error ? (
                     <div className="flex items-center gap-2 text-red-500 bg-red-50 dark:bg-red-900/10 p-4 rounded-md">

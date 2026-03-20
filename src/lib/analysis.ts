@@ -1,10 +1,11 @@
 import YahooFinance from 'yahoo-finance2';
 import { SMA, RSI, MACD, BollingerBands } from 'technicalindicators';
 import OpenAI from 'openai';
+import { getCachedQuote, setCachedQuote, TTL } from './quote-cache';
 
 const yahooFinance = new YahooFinance();
 
-export async function analyzeStock(symbolParam: string) {
+export async function analyzeStock(symbolParam: string, options?: { skipAI?: boolean }) {
     // Resolve Chinese names to symbols if necessary using our heuristic
     let querySymbol = symbolParam;
     const isChinese = /[\u4e00-\u9fa5]/.test(symbolParam);
@@ -27,30 +28,43 @@ export async function analyzeStock(symbolParam: string) {
         querySymbol = `${querySymbol}.TW`;
     }
 
-    // 1. Fetch Quote
+    // 1. Fetch Quote（60s 快取）
     let quote;
     try {
-        quote = await yahooFinance.quote(querySymbol);
+        const cachedQuote = getCachedQuote<typeof quote>(`yf:quote:${querySymbol}`);
+        if (cachedQuote) {
+            quote = cachedQuote;
+        } else {
+            quote = await yahooFinance.quote(querySymbol);
+            setCachedQuote(`yf:quote:${querySymbol}`, quote, TTL.QUOTE);
+        }
     } catch (e) {
         throw new Error(`找不到代號 ${querySymbol} 的即時資訊`);
     }
 
-    // 2. Fetch Historical Data (Last 100 days roughly)
+    // 2. Fetch Historical Data（5 分鐘快取，盤中變化不頻繁）
     const period1 = new Date();
-    period1.setDate(period1.getDate() - 150); // Get enough padding for 60-day SMA
+    period1.setDate(period1.getDate() - 360);
+    const historicalCacheKey = `yf:historical:${querySymbol}`;
+    let historical = getCachedQuote<Awaited<ReturnType<typeof yahooFinance.historical>>>(historicalCacheKey);
 
-    const historical = await yahooFinance.historical(querySymbol, {
-        period1: period1.toISOString().split('T')[0],
-        period2: new Date().toISOString().split('T')[0],
-        interval: '1d'
-    });
+    if (!historical) {
+        historical = await yahooFinance.historical(querySymbol, {
+            period1: period1.toISOString().split('T')[0],
+            period2: new Date().toISOString().split('T')[0],
+            interval: '1d'
+        });
+        setCachedQuote(historicalCacheKey, historical, TTL.HISTORICAL);
+    }
 
     if (!historical || historical.length === 0) {
         throw new Error("無法取得歷史價格進行技術分析");
     }
 
-    const closePrices = historical.map(h => h.close).filter(c => c !== null) as number[];
-    const volumes = historical.map(h => h.volume || 0);
+    const closePrices = (historical as Array<{ close: number | null; volume: number | null }>)
+        .map(h => h.close).filter(c => c !== null) as number[];
+    const volumes = (historical as Array<{ close: number | null; volume: number | null }>)
+        .map(h => h.volume || 0);
 
     // 3. Calculate Technical Indicators
     // SMA 5 (週線), SMA 20 (月線), SMA 60 (季線)
@@ -188,7 +202,7 @@ export async function analyzeStock(symbolParam: string) {
         console.warn("Could not fetch news for", querySymbol);
     }
 
-    // 5. AI 解讀（LLM 分析技術指標）
+    // 5. AI 解讀（LLM 分析技術指標）— 可透過 skipAI 跳過，避免 Cron / Screener 浪費
     let aiAnalysis: {
         verdict: string;
         confidence: string;
@@ -200,7 +214,11 @@ export async function analyzeStock(symbolParam: string) {
 
     try {
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
-        if (process.env.OPENAI_API_KEY) {
+        const aiCacheKey = `ai:verdict:${querySymbol}`;
+        const cachedAI = !options?.skipAI ? getCachedQuote<typeof aiAnalysis>(aiCacheKey) : null;
+        if (cachedAI) {
+            aiAnalysis = cachedAI;
+        } else if (!options?.skipAI && process.env.OPENAI_API_KEY) {
             const technicalSummary = `
 股票：${quote.shortName || querySymbol}（${querySymbol}）
 當前股價：${currentPrice}，當日漲跌幅：${quote.regularMarketChangePercent != null ? (quote.regularMarketChangePercent * 100).toFixed(2) : 'N/A'}%
@@ -252,12 +270,13 @@ export async function analyzeStock(symbolParam: string) {
 
             const raw = response.choices[0].message.content || '{}';
             aiAnalysis = JSON.parse(raw);
+            if (aiAnalysis) setCachedQuote(aiCacheKey, aiAnalysis, TTL.AI);
         }
     } catch (e) {
         console.warn('AI analysis failed, returning without AI verdict:', e);
     }
 
-    return {
+    const result = {
         symbol: querySymbol,
         name: quote.shortName || quote.longName || querySymbol,
         price: currentPrice,
@@ -284,4 +303,6 @@ export async function analyzeStock(symbolParam: string) {
         aiAnalysis,
         news
     };
+
+    return result;
 }

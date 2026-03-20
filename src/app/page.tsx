@@ -15,8 +15,10 @@ import { DailyRecommendation } from "@/components/dashboard/DailyRecommendation"
 import { PriceAlerts } from "@/components/dashboard/PriceAlerts";
 import { LearningCenter } from "@/components/dashboard/LearningCenter";
 import { UserGuide } from "@/components/dashboard/UserGuide";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
@@ -50,11 +52,26 @@ interface AllocationItem {
   value: number;
 }
 
+const TAB_OPTIONS = [
+  { value: "overview",  label: "市場動態" },
+  { value: "capital",   label: "資金動向" },
+  { value: "stocks",    label: "個股健康度" },
+  { value: "portfolio", label: "投資組合" },
+  { value: "custom",    label: "自訂資料源" },
+  { value: "watchlist", label: "自選股清單" },
+  { value: "backtest",  label: "策略回測" },
+  { value: "screener",  label: "選股篩選" },
+  { value: "daily",     label: "每日推薦" },
+  { value: "learning",  label: "📚 學習中心" },
+  { value: "guide",     label: "📖 使用說明" },
+];
+
 export default function Home() {
   const [indices, setIndices] = useState<Record<string, QuoteData>>({});
   const [news, setNews] = useState<NewsItem[]>([]);
   const [customNews, setCustomNews] = useState<CustomFeedItem[]>([]);
   const [allocation, setAllocation] = useState<AllocationItem[]>([]);
+  const [activeTab, setActiveTab] = useState("overview");
 
   useEffect(() => {
     const fetchIndices = async () => {
@@ -114,7 +131,8 @@ export default function Home() {
   const renderCard = (title: string, symbol: string, icon: React.ReactNode) => {
     const data = indices[symbol];
     const price = data?.regularMarketPrice?.toFixed(2) || "...";
-    const change = data?.regularMarketChangePercent?.toFixed(2) || "0.00";
+    // regularMarketChangePercent is a decimal fraction (e.g. 0.015 = 1.5%)
+    const change = ((data?.regularMarketChangePercent ?? 0) * 100).toFixed(2);
     const isUp = Number(change) >= 0;
 
     return (
@@ -154,20 +172,28 @@ export default function Home() {
           <h2 className="text-3xl font-bold tracking-tight">儀表板 (Dashboard)</h2>
         </div>
 
-        <Tabs defaultValue="overview" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          {/* Mobile: Select dropdown */}
+          <div className="sm:hidden">
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TAB_OPTIONS.map(t => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Desktop: horizontal tab strip */}
+          <div className="hidden sm:block overflow-x-auto pb-1">
           <TabsList>
-            <TabsTrigger value="overview">市場動態</TabsTrigger>
-            <TabsTrigger value="capital">資金動向</TabsTrigger>
-            <TabsTrigger value="stocks">個股健康度</TabsTrigger>
-            <TabsTrigger value="portfolio">投資組合</TabsTrigger>
-            <TabsTrigger value="custom">自訂資料源</TabsTrigger>
-            <TabsTrigger value="watchlist">自選股清單</TabsTrigger>
-            <TabsTrigger value="backtest">策略回測</TabsTrigger>
-            <TabsTrigger value="screener">選股篩選</TabsTrigger>
-            <TabsTrigger value="daily">每日推薦</TabsTrigger>
-            <TabsTrigger value="learning">📚 學習中心</TabsTrigger>
-            <TabsTrigger value="guide">📖 使用說明</TabsTrigger>
+            {TAB_OPTIONS.map(t => (
+              <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+            ))}
           </TabsList>
+          </div>
 
           <TabsContent value="overview" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -243,21 +269,21 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="capital" className="space-y-4">
-            <CapitalFlowTracker />
+            <ErrorBoundary name="資金動向"><CapitalFlowTracker /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="stocks" className="space-y-4">
-            <StockHealthAnalyzer />
+            <ErrorBoundary name="個股健康度"><StockHealthAnalyzer /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="portfolio" className="space-y-4">
-            <PortfolioTracker />
+            <ErrorBoundary name="投資組合"><PortfolioTracker /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="custom" className="space-y-4">
             <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
               <div>
-                <DataSourceManager />
+                <ErrorBoundary name="自訂資料源"><DataSourceManager /></ErrorBoundary>
               </div>
               <Card>
                 <CardHeader>
@@ -295,26 +321,26 @@ export default function Home() {
           </TabsContent>
 
           <TabsContent value="watchlist" className="space-y-4">
-            <GoogleSheetsTracker />
+            <ErrorBoundary name="自選股清單"><GoogleSheetsTracker /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="backtest" className="space-y-4">
-            <Backtester />
+            <ErrorBoundary name="策略回測"><Backtester /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="screener" className="space-y-4">
-            <StockScreener />
+            <ErrorBoundary name="選股篩選"><StockScreener /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="daily" className="space-y-4">
             <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-              <DailyRecommendation />
-              <PriceAlerts />
+              <ErrorBoundary name="每日推薦"><DailyRecommendation /></ErrorBoundary>
+              <ErrorBoundary name="價格警報"><PriceAlerts /></ErrorBoundary>
             </div>
           </TabsContent>
 
           <TabsContent value="learning" className="space-y-4">
-            <LearningCenter />
+            <ErrorBoundary name="學習中心"><LearningCenter /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="guide" className="space-y-4">

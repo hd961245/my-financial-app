@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import YahooFinance from 'yahoo-finance2';
+import { getCachedQuote, setCachedQuote, TTL } from '@/lib/quote-cache';
 
 const yahooFinance = new YahooFinance();
 
@@ -15,6 +16,7 @@ export async function GET() {
 
         const holdingsMap: Record<string, { symbol: string, categoryId: string | null, categoryName: string, shares: number, totalCost: number }> = {};
         let totalRealizedPnL = 0;
+        const realizedPnLPerTrade: Record<number, number> = {};
 
         trades.forEach((trade: any) => {
             const sym = trade.symbol;
@@ -36,6 +38,7 @@ export async function GET() {
                     const avgCost = holdingsMap[key].totalCost / currentShares;
                     const realizedGain = (trade.price - avgCost) * trade.shares;
                     totalRealizedPnL += realizedGain;
+                    realizedPnLPerTrade[trade.id] = realizedGain;
 
                     holdingsMap[key].shares -= trade.shares;
                     holdingsMap[key].totalCost -= avgCost * trade.shares;
@@ -75,17 +78,23 @@ export async function GET() {
             groupedHoldings[h.categoryName].push(h);
         });
 
-        // Fetch live quotes for active unique symbols (including watchlist) in parallel
+        // Fetch live quotes — 優先使用快取（60s TTL），避免 10s poll 重複打 Yahoo Finance
         const uniqueSymbols = Array.from(new Set([...flatHoldings, ...watchlistHoldings].map(h => h.symbol)));
         const quoteEntries = await Promise.all(
             uniqueSymbols.map(async (sym) => {
                 try {
+                    const cacheKey = `yf:quote:${sym}`;
+                    const cached = getCachedQuote<{ regularMarketPrice: number; regularMarketChangePercent: number }>(cacheKey);
+                    if (cached) return [sym, cached] as const;
+
                     const quote = await yahooFinance.quote(sym);
                     if (quote) {
-                        return [sym, {
+                        const result = {
                             regularMarketPrice: quote.regularMarketPrice || 0,
                             regularMarketChangePercent: quote.regularMarketChangePercent || 0,
-                        }] as const;
+                        };
+                        setCachedQuote(cacheKey, result, TTL.QUOTE);
+                        return [sym, result] as const;
                     }
                 } catch (e) {
                     console.error(`Failed to fetch quote in portfolio backend for ${sym}:`, e);
@@ -98,11 +107,12 @@ export async function GET() {
         );
 
         return NextResponse.json({
-            holdings: groupedHoldings, // Now sending grouped object
-            flatHoldings,              // Keeping flat array just in case
-            watchlistHoldings,         // Items with 0 shares
+            holdings: groupedHoldings,       // Grouped by category
+            flatHoldings,                    // Flat array
+            watchlistHoldings,               // 0-share items
             trades: trades.reverse(),
             realizedPnL: totalRealizedPnL,
+            realizedPnLPerTrade,             // { tradeId: gainLoss }
             quotes
         });
     } catch (error) {

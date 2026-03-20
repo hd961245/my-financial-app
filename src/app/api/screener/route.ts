@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
       const batch = symbols.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.allSettled(
-        batch.map(sym => analyzeStock(sym.trim()))
+        batch.map(sym => analyzeStock(sym.trim(), { skipAI: true }))
       );
 
       for (let j = 0; j < batchResults.length; j++) {

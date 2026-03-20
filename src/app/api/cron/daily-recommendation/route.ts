@@ -86,14 +86,16 @@ export async function GET(request: Request) {
 
         const toAnalyze = stockEntries.slice(0, 15);
 
-        // 2. Analyze each stock
+        // 2. Analyze each stock — 並行執行，skipAI 避免重複 LLM 呼叫（Cron 有自己的 AI）
+        const settled = await Promise.allSettled(
+            toAnalyze.map(entry => analyzeStock(entry.symbol, { skipAI: true }).then(analysis => ({ entry, analysis })))
+        );
         const analysisResults: { entry: StockEntry; analysis: any }[] = [];
-        for (const entry of toAnalyze) {
-            try {
-                const analysis = await analyzeStock(entry.symbol);
-                analysisResults.push({ entry, analysis });
-            } catch (err) {
-                console.warn(`Failed to analyze ${entry.symbol}:`, err);
+        for (const result of settled) {
+            if (result.status === 'fulfilled') {
+                analysisResults.push(result.value);
+            } else {
+                console.warn('Failed to analyze stock:', result.reason);
             }
         }
 
