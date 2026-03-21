@@ -137,6 +137,7 @@ model AITradingRec {
   stopLoss    Float?
   entryPrice  Float     // price at recommendation time
   reason      String
+  factors     String?   // JSON: {technical, fundamental, sentiment, risk} 0-100
   exitPrice   Float?    // filled on close
   returnPct   Float?    // (exitPrice - entryPrice) / entryPrice * 100
   isWin       Boolean?  // true if returnPct > 0

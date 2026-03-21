@@ -1,16 +1,23 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-    Trophy, TrendingUp, TrendingDown, Minus, Settings,
-    RefreshCw, Zap, BarChart3, Clock, Target, Shield, X, Plus, Trash2
+    Trophy, TrendingUp, TrendingDown, Settings,
+    RefreshCw, Zap, BarChart3, Clock, Target, Shield, X, Plus,
+    Brain, ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface DecisionFactors {
+    technical: number;
+    fundamental: number;
+    sentiment: number;
+    risk: number;
+}
 
 interface AITradingRec {
     id: number;
@@ -24,6 +31,7 @@ interface AITradingRec {
     stopLoss: number | null;
     entryPrice: number;
     reason: string;
+    factors: string | null;  // JSON string
     exitPrice: number | null;
     returnPct: number | null;
     isWin: boolean | null;
@@ -34,6 +42,12 @@ interface LeaderboardEntry {
     total: number;
     wins: number;
     totalReturn: number;
+}
+
+interface StrategyMemo {
+    memo: string;
+    updatedAt: string | null;
+    basedOn?: number;
 }
 
 interface Config {
@@ -47,38 +61,49 @@ interface Config {
     auto_paper_min_confidence: number;
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const MODEL_LABELS: Record<string, string> = {
     claude: '🟠 Claude',
     openai: '🟢 GPT-4o',
     gemini: '🔵 Gemini',
 };
-
 const MODEL_COLORS: Record<string, string> = {
     claude: 'border-orange-500 bg-orange-950/20',
     openai: 'border-green-500 bg-green-950/20',
     gemini: 'border-blue-500 bg-blue-950/20',
 };
-
+const MODEL_ACCENT: Record<string, string> = {
+    claude: 'text-orange-400',
+    openai: 'text-green-400',
+    gemini: 'text-blue-400',
+};
 const ACTION_BADGE: Record<string, string> = {
     BUY: 'bg-green-600 text-white',
     SELL: 'bg-red-600 text-white',
     HOLD: 'bg-yellow-600 text-white',
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const FACTOR_META: { key: keyof DecisionFactors; label: string; color: string }[] = [
+    { key: 'technical',   label: '技術面', color: 'bg-blue-500' },
+    { key: 'fundamental', label: '基本面', color: 'bg-emerald-500' },
+    { key: 'sentiment',   label: '情緒面', color: 'bg-purple-500' },
+    { key: 'risk',        label: '低風險', color: 'bg-orange-400' },
+];
+
+// ─── Primitive helpers ────────────────────────────────────────────────────────
 
 function WinRate({ total, wins }: { total: number; wins: number }) {
     if (total === 0) return <span className="text-muted-foreground text-xs">無紀錄</span>;
-    const pct = ((wins / total) * 100).toFixed(0);
-    const color = Number(pct) >= 55 ? 'text-green-400' : Number(pct) >= 45 ? 'text-yellow-400' : 'text-red-400';
-    return <span className={`font-bold ${color}`}>{pct}%</span>;
+    const pct = (wins / total) * 100;
+    const color = pct >= 55 ? 'text-green-400' : pct >= 45 ? 'text-yellow-400' : 'text-red-400';
+    return <span className={`font-bold ${color}`}>{pct.toFixed(0)}%</span>;
 }
 
 function ReturnBadge({ value }: { value: number | null }) {
     if (value == null) return <span className="text-muted-foreground text-xs">未結算</span>;
     const color = value > 0 ? 'text-green-400' : value < 0 ? 'text-red-400' : 'text-muted-foreground';
-    const sign = value > 0 ? '+' : '';
-    return <span className={`font-mono text-sm font-bold ${color}`}>{sign}{value.toFixed(2)}%</span>;
+    return <span className={`font-mono text-sm font-bold ${color}`}>{value > 0 ? '+' : ''}{value.toFixed(2)}%</span>;
 }
 
 function ConfidenceBar({ value }: { value: number }) {
@@ -88,40 +113,103 @@ function ConfidenceBar({ value }: { value: number }) {
             <div className="flex-1 bg-muted rounded-full h-1.5">
                 <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${value}%` }} />
             </div>
-            <span className="text-xs text-muted-foreground w-7 text-right">{value}%</span>
+            <span className="text-xs text-muted-foreground w-8 text-right">{value}%</span>
         </div>
     );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Decision Factors Panel ───────────────────────────────────────────────────
+
+function DecisionFactorsPanel({ factors }: { factors: DecisionFactors }) {
+    return (
+        <div className="space-y-1.5 pt-1 border-t border-border/50">
+            <div className="text-xs text-muted-foreground font-medium mb-1">決策邏輯分解</div>
+            {FACTOR_META.map(({ key, label, color }) => (
+                <div key={key} className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground w-12 shrink-0">{label}</span>
+                    <div className="flex-1 bg-muted rounded-full h-2">
+                        <div
+                            className={`h-2 rounded-full ${color} transition-all`}
+                            style={{ width: `${factors[key]}%` }}
+                        />
+                    </div>
+                    <span className="text-xs font-mono text-muted-foreground w-6 text-right">{factors[key]}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// ─── Rec Card ────────────────────────────────────────────────────────────────
 
 function RecCard({ rec }: { rec: AITradingRec }) {
+    const [expanded, setExpanded] = useState(false);
     const isClosed = rec.closedAt != null;
+
+    let factors: DecisionFactors | null = null;
+    try {
+        if (rec.factors) factors = JSON.parse(rec.factors);
+    } catch { /* ignore */ }
+
     return (
         <div className="border border-border rounded-lg p-3 space-y-2 hover:border-muted-foreground/40 transition-colors">
+            {/* Header row */}
             <div className="flex items-start justify-between gap-2">
                 <div>
-                    <div className="font-semibold text-sm">{rec.name}</div>
+                    <div className="font-semibold text-sm leading-tight">{rec.name}</div>
                     <div className="text-xs text-muted-foreground">{rec.symbol}</div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
+                <div className="flex flex-col items-end gap-1 shrink-0">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ACTION_BADGE[rec.action]}`}>
                         {rec.action}
                     </span>
                     {isClosed && <ReturnBadge value={rec.returnPct} />}
                 </div>
             </div>
+
+            {/* Confidence */}
             <ConfidenceBar value={rec.confidence} />
+
+            {/* Reason */}
             <div className="text-xs text-muted-foreground leading-relaxed">{rec.reason}</div>
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
+
+            {/* Price row */}
+            <div className="flex items-center justify-between text-xs text-muted-foreground flex-wrap gap-x-3 gap-y-0.5">
                 <span>進場 <span className="font-mono text-foreground">{rec.entryPrice}</span></span>
-                {rec.targetPrice && <span className="flex items-center gap-0.5"><Target className="w-3 h-3" />{rec.targetPrice}</span>}
-                {rec.stopLoss && <span className="flex items-center gap-0.5 text-red-400"><Shield className="w-3 h-3" />{rec.stopLoss}</span>}
-                {isClosed && rec.exitPrice && <span>出場 <span className="font-mono">{rec.exitPrice}</span></span>}
+                {rec.targetPrice && (
+                    <span className="flex items-center gap-0.5">
+                        <Target className="w-3 h-3" />{rec.targetPrice}
+                    </span>
+                )}
+                {rec.stopLoss && (
+                    <span className="flex items-center gap-0.5 text-red-400">
+                        <Shield className="w-3 h-3" />{rec.stopLoss}
+                    </span>
+                )}
+                {isClosed && rec.exitPrice && (
+                    <span>出場 <span className="font-mono">{rec.exitPrice}</span></span>
+                )}
             </div>
+
+            {/* Decision factors toggle */}
+            {factors && (
+                <>
+                    <button
+                        onClick={() => setExpanded(v => !v)}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                        <Brain className="w-3 h-3" />
+                        決策邏輯
+                        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                    </button>
+                    {expanded && <DecisionFactorsPanel factors={factors} />}
+                </>
+            )}
         </div>
     );
 }
+
+// ─── Leaderboard Card ─────────────────────────────────────────────────────────
 
 function LeaderboardCard({ model, data }: { model: string; data: LeaderboardEntry }) {
     const avgReturn = data.total > 0 ? data.totalReturn / data.total : 0;
@@ -143,11 +231,95 @@ function LeaderboardCard({ model, data }: { model: string; data: LeaderboardEntr
                         <span className="font-bold text-sm">{data.total}</span>
                     </div>
                 </div>
-                <div className="text-xs text-muted-foreground">
-                    勝 {data.wins} / 敗 {data.total - data.wins}
-                </div>
+                <div className="text-xs text-muted-foreground">勝 {data.wins} / 敗 {data.total - data.wins}</div>
             </CardContent>
         </Card>
+    );
+}
+
+// ─── Strategy Panel ───────────────────────────────────────────────────────────
+
+function StrategyPanel({ strategies, onOptimized }: {
+    strategies: Record<string, StrategyMemo | null>;
+    onOptimized: (model: string, memo: StrategyMemo) => void;
+}) {
+    const [optimizing, setOptimizing] = useState<Record<string, boolean>>({});
+    const [errors, setErrors] = useState<Record<string, string>>({});
+
+    const handleOptimize = async (model: string) => {
+        setOptimizing(prev => ({ ...prev, [model]: true }));
+        setErrors(prev => ({ ...prev, [model]: '' }));
+        try {
+            const res = await fetch(`/api/ai-trading/optimize?model=${model}`, { method: 'POST' });
+            const data = await res.json();
+            if (data.error) {
+                setErrors(prev => ({ ...prev, [model]: data.error }));
+            } else {
+                onOptimized(model, { memo: data.memo, updatedAt: data.updatedAt, basedOn: data.basedOn });
+            }
+        } catch {
+            setErrors(prev => ({ ...prev, [model]: '優化失敗，請稍後再試' }));
+        } finally {
+            setOptimizing(prev => ({ ...prev, [model]: false }));
+        }
+    };
+
+    return (
+        <div className="space-y-5">
+            <div className="text-sm text-muted-foreground">
+                AI 競技場會分析各模型的歷史勝敗規律，自動產出策略備忘錄，並在下次生成時將其注入 prompt，讓 AI 從自身失敗中學習。
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {(['claude', 'openai', 'gemini'] as const).map(model => {
+                    const s = strategies[model];
+                    const isOptimizing = optimizing[model];
+                    const err = errors[model];
+                    return (
+                        <div key={model} className={`rounded-xl border-2 p-4 space-y-3 ${MODEL_COLORS[model]}`}>
+                            <div className="flex items-center justify-between">
+                                <div className={`font-bold text-base ${MODEL_ACCENT[model]}`}>{MODEL_LABELS[model]}</div>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleOptimize(model)}
+                                    disabled={isOptimizing}
+                                    className="h-7 text-xs"
+                                >
+                                    <Sparkles className="w-3 h-3 mr-1" />
+                                    {isOptimizing ? '優化中...' : '立即優化'}
+                                </Button>
+                            </div>
+
+                            {err && (
+                                <div className="text-xs text-red-400 bg-red-950/30 border border-red-800/40 rounded p-2">
+                                    {err}
+                                </div>
+                            )}
+
+                            {s ? (
+                                <div className="space-y-2">
+                                    <div className="text-xs bg-muted/50 rounded-lg p-3 leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto">
+                                        {s.memo}
+                                    </div>
+                                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                        {s.basedOn && <span>基於 {s.basedOn} 筆歷史交易</span>}
+                                        {s.updatedAt && (
+                                            <span>更新：{new Date(s.updatedAt).toLocaleDateString('zh-TW')}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-sm text-muted-foreground py-6 text-center space-y-2">
+                                    <Brain className="w-8 h-8 mx-auto opacity-30" />
+                                    <p>尚無策略備忘錄</p>
+                                    <p className="text-xs">需至少 3 筆已結算的推薦才能優化</p>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
     );
 }
 
@@ -188,10 +360,6 @@ function SettingsModal({ config, onClose, onSave }: {
         setNewStock('');
     };
 
-    const removeStock = (s: string) => {
-        setLocal(prev => ({ ...prev, stocks: prev.stocks.filter(x => x !== s) }));
-    };
-
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
             <div className="bg-background border border-border rounded-xl w-full max-w-lg p-6 space-y-5 max-h-[90vh] overflow-y-auto">
@@ -200,14 +368,12 @@ function SettingsModal({ config, onClose, onSave }: {
                     <button onClick={onClose}><X className="w-5 h-5" /></button>
                 </div>
 
-                {/* Model enable/disable */}
                 <div className="space-y-2">
                     <div className="text-sm font-semibold text-muted-foreground">啟用 AI 模型</div>
                     {(['claude', 'openai', 'gemini'] as const).map(m => (
                         <label key={m} className="flex items-center gap-3 cursor-pointer">
                             <input
-                                type="checkbox"
-                                className="w-4 h-4"
+                                type="checkbox" className="w-4 h-4"
                                 checked={local[`${m}_enabled`]}
                                 onChange={e => setLocal(prev => ({ ...prev, [`${m}_enabled`]: e.target.checked }))}
                             />
@@ -216,7 +382,6 @@ function SettingsModal({ config, onClose, onSave }: {
                     ))}
                 </div>
 
-                {/* Stocks */}
                 <div className="space-y-2">
                     <div className="text-sm font-semibold text-muted-foreground">分析股票清單</div>
                     <div className="flex gap-2">
@@ -233,50 +398,42 @@ function SettingsModal({ config, onClose, onSave }: {
                         {local.stocks.map(s => (
                             <div key={s} className="flex items-center gap-1 bg-muted px-2 py-0.5 rounded text-sm">
                                 {s}
-                                <button onClick={() => removeStock(s)}><X className="w-3 h-3" /></button>
+                                <button onClick={() => setLocal(prev => ({ ...prev, stocks: prev.stocks.filter(x => x !== s) }))}>
+                                    <X className="w-3 h-3" />
+                                </button>
                             </div>
                         ))}
                     </div>
                 </div>
 
-                {/* Confidence threshold */}
                 <div className="space-y-1">
                     <label className="text-sm font-semibold text-muted-foreground">
                         最低信心閾值：<span className="text-foreground">{local.min_confidence}%</span>
                     </label>
-                    <input
-                        type="range" min={40} max={90} step={5}
-                        value={local.min_confidence}
+                    <input type="range" min={40} max={90} step={5} value={local.min_confidence}
                         onChange={e => setLocal(prev => ({ ...prev, min_confidence: Number(e.target.value) }))}
-                        className="w-full"
-                    />
+                        className="w-full" />
                 </div>
 
-                {/* Close days */}
                 <div className="space-y-1">
                     <label className="text-sm font-semibold text-muted-foreground">
                         持倉天數（自動結算）：<span className="text-foreground">{local.close_days} 天</span>
                     </label>
-                    <input
-                        type="range" min={1} max={30} step={1}
-                        value={local.close_days}
+                    <input type="range" min={1} max={30} step={1} value={local.close_days}
                         onChange={e => setLocal(prev => ({ ...prev, close_days: Number(e.target.value) }))}
-                        className="w-full"
-                    />
+                        className="w-full" />
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
                     <Button variant="outline" onClick={onClose}>取消</Button>
-                    <Button onClick={handleSave} disabled={saving}>
-                        {saving ? '儲存中...' : '儲存設定'}
-                    </Button>
+                    <Button onClick={handleSave} disabled={saving}>{saving ? '儲存中...' : '儲存設定'}</Button>
                 </div>
             </div>
         </div>
     );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function AITradingArena() {
     const [recs, setRecs] = useState<AITradingRec[]>([]);
@@ -287,6 +444,9 @@ export default function AITradingArena() {
     });
     const [history, setHistory] = useState<AITradingRec[]>([]);
     const [config, setConfig] = useState<Config | null>(null);
+    const [strategies, setStrategies] = useState<Record<string, StrategyMemo | null>>({
+        claude: null, openai: null, gemini: null,
+    });
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
@@ -305,10 +465,9 @@ export default function AITradingArena() {
             if (todayData.recs) setRecs(todayData.recs);
             if (todayData.leaderboard) setLeaderboard(todayData.leaderboard);
             if (todayData.config) setConfig(todayData.config);
+            if (todayData.strategies) setStrategies(todayData.strategies);
             if (histData.history) setHistory(histData.history);
-        } catch {
-            /* ignore */
-        } finally {
+        } catch { /* ignore */ } finally {
             setLoading(false);
         }
     }, []);
@@ -321,14 +480,9 @@ export default function AITradingArena() {
         try {
             const res = await fetch('/api/ai-trading', { method: 'POST' });
             const data = await res.json();
-            if (data.error) {
-                setGenMessage(data.error);
-            } else if (data.message) {
-                setGenMessage(data.message);
-            } else {
-                setGenMessage(`成功生成 ${data.count} 筆推薦！`);
-                await loadData();
-            }
+            if (data.error) setGenMessage(data.error);
+            else if (data.message) setGenMessage(data.message);
+            else { setGenMessage(`成功生成 ${data.count} 筆推薦！`); await loadData(); }
         } catch {
             setGenMessage('生成失敗，請稍後再試。');
         } finally {
@@ -336,7 +490,7 @@ export default function AITradingArena() {
         }
     };
 
-    // Group today's recs by model
+    // Group by model
     const byModel: Record<string, AITradingRec[]> = { claude: [], openai: [], gemini: [] };
     for (const r of recs) {
         if (!byModel[r.aiModel]) byModel[r.aiModel] = [];
@@ -345,11 +499,11 @@ export default function AITradingArena() {
 
     // Sort leaderboard by win rate
     const rankedModels = (['claude', 'openai', 'gemini'] as string[]).sort((a: string, b: string) => {
-        const lb = leaderboard[b] ?? { total: 0, wins: 0, totalReturn: 0 };
         const la = leaderboard[a] ?? { total: 0, wins: 0, totalReturn: 0 };
-        const wr_a = la.total > 0 ? la.wins / la.total : 0;
-        const wr_b = lb.total > 0 ? lb.wins / lb.total : 0;
-        return wr_b - wr_a;
+        const lb = leaderboard[b] ?? { total: 0, wins: 0, totalReturn: 0 };
+        const wa = la.total > 0 ? la.wins / la.total : 0;
+        const wb = lb.total > 0 ? lb.wins / lb.total : 0;
+        return wb - wa;
     });
 
     return (
@@ -362,7 +516,7 @@ export default function AITradingArena() {
                         AI 量化交易競技場
                     </h2>
                     <p className="text-muted-foreground text-sm mt-0.5">
-                        Claude vs GPT-4o vs Gemini — 每日生成交易建議，追蹤真實績效
+                        Claude vs GPT-4o vs Gemini — 每日生成交易建議、可視化決策邏輯、從績效中自動學習
                     </p>
                 </div>
                 <div className="flex gap-2">
@@ -373,8 +527,7 @@ export default function AITradingArena() {
                         <RefreshCw className={`w-4 h-4 mr-1 ${loading ? 'animate-spin' : ''}`} />重整
                     </Button>
                     <Button size="sm" onClick={handleGenerate} disabled={generating}>
-                        <Zap className="w-4 h-4 mr-1" />
-                        {generating ? '生成中...' : '今日生成'}
+                        <Zap className="w-4 h-4 mr-1" />{generating ? '生成中...' : '今日生成'}
                     </Button>
                 </div>
             </div>
@@ -399,18 +552,21 @@ export default function AITradingArena() {
                 ))}
             </div>
 
-            {/* Tabs */}
+            {/* Main Tabs */}
             <Tabs value={tab} onValueChange={setTab}>
                 <TabsList>
                     <TabsTrigger value="today">
                         <BarChart3 className="w-4 h-4 mr-1" />今日建議
+                    </TabsTrigger>
+                    <TabsTrigger value="strategy">
+                        <Brain className="w-4 h-4 mr-1" />策略優化
                     </TabsTrigger>
                     <TabsTrigger value="history">
                         <Clock className="w-4 h-4 mr-1" />歷史績效
                     </TabsTrigger>
                 </TabsList>
 
-                {/* Today's picks */}
+                {/* ── Today's picks ── */}
                 <TabsContent value="today" className="mt-4">
                     {loading ? (
                         <div className="text-center py-12 text-muted-foreground">載入中...</div>
@@ -426,7 +582,7 @@ export default function AITradingArena() {
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             {(['claude', 'openai', 'gemini'] as const).map(m => (
                                 <div key={m} className={`rounded-xl border-2 p-4 space-y-3 ${MODEL_COLORS[m]}`}>
-                                    <div className="font-bold text-base">{MODEL_LABELS[m]}</div>
+                                    <div className={`font-bold text-base ${MODEL_ACCENT[m]}`}>{MODEL_LABELS[m]}</div>
                                     {byModel[m].length === 0 ? (
                                         <div className="text-muted-foreground text-sm py-4 text-center">
                                             {config && !config[`${m}_enabled` as keyof Config] ? '已停用' : '無推薦'}
@@ -440,7 +596,17 @@ export default function AITradingArena() {
                     )}
                 </TabsContent>
 
-                {/* History */}
+                {/* ── Strategy Optimization ── */}
+                <TabsContent value="strategy" className="mt-4">
+                    <StrategyPanel
+                        strategies={strategies}
+                        onOptimized={(model, memo) =>
+                            setStrategies(prev => ({ ...prev, [model]: memo }))
+                        }
+                    />
+                </TabsContent>
+
+                {/* ── History ── */}
                 <TabsContent value="history" className="mt-4">
                     {history.length === 0 ? (
                         <div className="text-center py-12 text-muted-foreground">
@@ -458,37 +624,58 @@ export default function AITradingArena() {
                                         <th className="text-left py-2 pr-3">動作</th>
                                         <th className="text-right py-2 pr-3">進場</th>
                                         <th className="text-right py-2 pr-3">出場</th>
-                                        <th className="text-right py-2">報酬</th>
+                                        <th className="text-right py-2 pr-3">報酬</th>
+                                        <th className="text-center py-2">決策</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {history.map(r => (
-                                        <tr key={r.id} className="border-b border-border/50 hover:bg-muted/30">
-                                            <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap">
-                                                {new Date(r.date).toLocaleDateString('zh-TW')}
-                                            </td>
-                                            <td className="py-2 pr-3">{MODEL_LABELS[r.aiModel] || r.aiModel}</td>
-                                            <td className="py-2 pr-3">
-                                                <div className="font-medium">{r.name}</div>
-                                                <div className="text-xs text-muted-foreground">{r.symbol}</div>
-                                            </td>
-                                            <td className="py-2 pr-3">
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ACTION_BADGE[r.action]}`}>
-                                                    {r.action}
-                                                </span>
-                                            </td>
-                                            <td className="py-2 pr-3 text-right font-mono">{r.entryPrice}</td>
-                                            <td className="py-2 pr-3 text-right font-mono">{r.exitPrice ?? '-'}</td>
-                                            <td className="py-2 text-right">
-                                                <ReturnBadge value={r.returnPct} />
-                                                {r.isWin != null && (
-                                                    r.isWin
-                                                        ? <TrendingUp className="inline w-3.5 h-3.5 text-green-400 ml-1" />
-                                                        : <TrendingDown className="inline w-3.5 h-3.5 text-red-400 ml-1" />
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {history.map(r => {
+                                        let factors: DecisionFactors | null = null;
+                                        try { if (r.factors) factors = JSON.parse(r.factors); } catch { /* ignore */ }
+                                        return (
+                                            <tr key={r.id} className="border-b border-border/50 hover:bg-muted/30">
+                                                <td className="py-2 pr-3 text-muted-foreground whitespace-nowrap text-xs">
+                                                    {new Date(r.date).toLocaleDateString('zh-TW')}
+                                                </td>
+                                                <td className="py-2 pr-3 text-xs">{MODEL_LABELS[r.aiModel] || r.aiModel}</td>
+                                                <td className="py-2 pr-3">
+                                                    <div className="font-medium text-sm">{r.name}</div>
+                                                    <div className="text-xs text-muted-foreground">{r.symbol}</div>
+                                                </td>
+                                                <td className="py-2 pr-3">
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ACTION_BADGE[r.action]}`}>
+                                                        {r.action}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 pr-3 text-right font-mono text-sm">{r.entryPrice}</td>
+                                                <td className="py-2 pr-3 text-right font-mono text-sm">{r.exitPrice ?? '-'}</td>
+                                                <td className="py-2 pr-3 text-right">
+                                                    <ReturnBadge value={r.returnPct} />
+                                                    {r.isWin != null && (
+                                                        r.isWin
+                                                            ? <TrendingUp className="inline w-3.5 h-3.5 text-green-400 ml-1" />
+                                                            : <TrendingDown className="inline w-3.5 h-3.5 text-red-400 ml-1" />
+                                                    )}
+                                                </td>
+                                                <td className="py-2 text-center">
+                                                    {factors ? (
+                                                        <div className="flex gap-0.5 justify-center">
+                                                            {FACTOR_META.map(f => (
+                                                                <div
+                                                                    key={f.key}
+                                                                    title={`${f.label}: ${factors![f.key]}`}
+                                                                    className={`w-1.5 rounded-sm ${f.color}`}
+                                                                    style={{ height: `${Math.max(4, (factors![f.key] / 100) * 20)}px` }}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-muted-foreground text-xs">-</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -500,7 +687,7 @@ export default function AITradingArena() {
                 <SettingsModal
                     config={config}
                     onClose={() => setShowSettings(false)}
-                    onSave={(c) => { setConfig(c); }}
+                    onSave={(c) => setConfig(c)}
                 />
             )}
         </div>
