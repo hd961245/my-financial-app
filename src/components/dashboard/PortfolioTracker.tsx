@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw, LineChart } from "lucide-react";
+import { RefreshCcw, Trash2, Wallet, Bot, Activity, RefreshCw, LineChart, ShieldAlert } from "lucide-react";
 import { LineChart as RechartsLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StockChart } from "./StockChart";
@@ -87,6 +87,14 @@ export function PortfolioTracker() {
     // Chart Modal state
     const [chartModalOpen, setChartModalOpen] = useState(false);
     const [selectedChartSymbol, setSelectedChartSymbol] = useState("");
+
+    // Risk metrics
+    const [riskData, setRiskData] = useState<{
+        insufficient?: boolean; message?: string;
+        annReturn?: number; annVolatility?: number;
+        maxDrawdown?: number; sharpe?: number;
+        beta?: number | null; totalReturn?: number; days?: number;
+    } | null>(null);
 
     // Net Worth history
     const [netWorthHistory, setNetWorthHistory] = useState<{ date: string; totalValue: number; benchmark?: number }[]>([]);
@@ -212,6 +220,7 @@ export function PortfolioTracker() {
         fetchCategories();
         fetchPortfolio();
         fetchNetWorthHistory();
+        fetch('/api/portfolio/risk').then(r => r.ok ? r.json() : null).then(d => { if (d) setRiskData(d); }).catch(() => {});
 
         const interval = setInterval(() => {
             fetchPortfolio();
@@ -530,6 +539,69 @@ export function PortfolioTracker() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Risk Metrics */}
+            {riskData && !riskData.insufficient && (
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                            <ShieldAlert className="h-4 w-4 text-orange-500" />
+                            風險指標 (Risk Metrics)
+                            <span className="text-xs font-normal text-muted-foreground">基於 {riskData.days} 天淨值歷史</span>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                                <p className="text-xs text-muted-foreground mb-1">累計報酬</p>
+                                <p className={`text-lg font-bold ${(riskData.totalReturn ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {(riskData.totalReturn ?? 0) >= 0 ? '+' : ''}{riskData.totalReturn}%
+                                </p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                                <p className="text-xs text-muted-foreground mb-1">年化報酬</p>
+                                <p className={`text-lg font-bold ${(riskData.annReturn ?? 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {(riskData.annReturn ?? 0) >= 0 ? '+' : ''}{riskData.annReturn}%
+                                </p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                                <p className="text-xs text-muted-foreground mb-1">年化波動率</p>
+                                <p className="text-lg font-bold text-orange-500">{riskData.annVolatility}%</p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                                <p className="text-xs text-muted-foreground mb-1">最大回撤</p>
+                                <p className="text-lg font-bold text-red-500">-{riskData.maxDrawdown}%</p>
+                            </div>
+                            <div className="bg-muted/40 rounded-lg p-3 text-center">
+                                <p className="text-xs text-muted-foreground mb-1">
+                                    Sharpe Ratio
+                                </p>
+                                <p className={`text-lg font-bold ${(riskData.sharpe ?? 0) >= 1 ? 'text-green-500' : (riskData.sharpe ?? 0) >= 0 ? 'text-yellow-500' : 'text-red-500'}`}>
+                                    {riskData.sharpe?.toFixed(2)}
+                                </p>
+                            </div>
+                            {riskData.beta !== null && riskData.beta !== undefined && (
+                                <div className="bg-muted/40 rounded-lg p-3 text-center md:col-span-1">
+                                    <p className="text-xs text-muted-foreground mb-1">Beta (vs S&P 500)</p>
+                                    <p className={`text-lg font-bold ${Math.abs(riskData.beta) > 1.5 ? 'text-red-500' : Math.abs(riskData.beta) > 1 ? 'text-orange-500' : 'text-green-500'}`}>
+                                        {riskData.beta.toFixed(2)}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-muted-foreground border-t pt-3">
+                            <div>📊 <strong>Sharpe &gt;1</strong> = 風險調整後報酬良好</div>
+                            <div>📉 <strong>Beta &lt;1</strong> = 波動低於大盤</div>
+                            <div>⚠️ <strong>最大回撤</strong> = 歷史最大虧損幅度</div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
+            {riskData?.insufficient && (
+                <div className="text-xs text-muted-foreground text-center py-2">
+                    {riskData.message}（每日開啟頁面會自動累積快照）
+                </div>
+            )}
 
             {/* Net Worth History Chart */}
             {netWorthHistory.length > 1 && (
