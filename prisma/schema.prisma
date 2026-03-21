@@ -125,3 +125,26 @@ model PriceAlert {
   @@index([isActive])
 }
 
+model AITradingRec {
+  id          Int       @id @default(autoincrement())
+  date        DateTime  // recommendation date (midnight UTC)
+  aiModel     String    // 'claude' | 'openai' | 'gemini'
+  symbol      String
+  name        String    @default("")
+  action      String    // 'BUY' | 'SELL' | 'HOLD'
+  confidence  Int       @default(50)  // 0-100
+  targetPrice Float?
+  stopLoss    Float?
+  entryPrice  Float     // price at recommendation time
+  reason      String
+  exitPrice   Float?    // filled on close
+  returnPct   Float?    // (exitPrice - entryPrice) / entryPrice * 100
+  isWin       Boolean?  // true if returnPct > 0
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([date, aiModel, symbol])
+  @@index([date])
+  @@index([aiModel])
+}
+

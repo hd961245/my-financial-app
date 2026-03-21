@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/daily-recommendation",
       "schedule": "0 8 * * 1-5"
+    },
+    {
+      "path": "/api/ai-trading",
+      "schedule": "30 8 * * 1-5"
+    },
+    {
+      "path": "/api/ai-trading/update-performance",
+      "schedule": "0 18 * * 1-5"
     }
   ]
 }

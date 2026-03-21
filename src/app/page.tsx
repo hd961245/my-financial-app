@@ -15,6 +15,7 @@ import { DailyRecommendation } from "@/components/dashboard/DailyRecommendation"
 import { PriceAlerts } from "@/components/dashboard/PriceAlerts";
 import { LearningCenter } from "@/components/dashboard/LearningCenter";
 import { UserGuide } from "@/components/dashboard/UserGuide";
+import AITradingArena from "@/components/dashboard/AITradingArena";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -62,6 +63,7 @@ const TAB_OPTIONS = [
   { value: "backtest",  label: "策略回測" },
   { value: "screener",  label: "選股篩選" },
   { value: "daily",     label: "每日推薦" },
+  { value: "ai-arena",  label: "🤖 AI 競技場" },
   { value: "learning",  label: "📚 學習中心" },
   { value: "guide",     label: "📖 使用說明" },
 ];
@@ -341,6 +343,10 @@ export default function Home() {
 
           <TabsContent value="learning" className="space-y-4">
             <ErrorBoundary name="學習中心"><LearningCenter /></ErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="ai-arena" className="space-y-4">
+            <ErrorBoundary name="AI 競技場"><AITradingArena /></ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="guide" className="space-y-4">
