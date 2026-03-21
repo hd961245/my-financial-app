@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCachedQuote, setCachedQuote } from '@/lib/quote-cache';
+import { finmindUrl } from '@/lib/finmind';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +67,7 @@ async function fetchInstitutional(): Promise<{ topBuying: FlowSummary[]; topSell
     await Promise.allSettled(
         WATCH_SYMBOLS.map(async (sym) => {
             try {
-                const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockInstitutionalInvestors&data_id=${sym}&start_date=${startStr}&end_date=${endStr}`;
+                const url = finmindUrl({ dataset: 'TaiwanStockInstitutionalInvestors', data_id: sym, start_date: startStr, end_date: endStr });
                 const json = await fetch(url, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
                 if (json.msg !== 'success' || !json.data?.length) return;
 
@@ -106,7 +107,7 @@ async function fetchMargin(): Promise<{ top: MarginSummary[]; updatedAt: string 
     await Promise.allSettled(
         WATCH_SYMBOLS.map(async (sym) => {
             try {
-                const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMarginPurchaseShortSale&data_id=${sym}&start_date=${startStr}&end_date=${endStr}`;
+                const url = finmindUrl({ dataset: 'TaiwanStockMarginPurchaseShortSale', data_id: sym, start_date: startStr, end_date: endStr });
                 const json = await fetch(url, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
                 if (json.msg !== 'success' || !json.data?.length) return;
 
@@ -140,7 +141,7 @@ async function fetchFutures(): Promise<FuturesSummary | null> {
     const { startStr, endStr } = dateRange(5);
     try {
         // TX = 台指期
-        const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanFuturesInstitutionalInvestors&data_id=TX&start_date=${startStr}&end_date=${endStr}`;
+        const url = finmindUrl({ dataset: 'TaiwanFuturesInstitutionalInvestors', data_id: 'TX', start_date: startStr, end_date: endStr });
         const json = await fetch(url, { signal: AbortSignal.timeout(8000) }).then(r => r.json());
         if (json.msg !== 'success' || !json.data?.length) return null;
 

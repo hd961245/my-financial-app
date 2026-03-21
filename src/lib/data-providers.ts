@@ -1,5 +1,6 @@
 import YahooFinance from 'yahoo-finance2';
 import { getCachedQuote, setCachedQuote, TTL } from './quote-cache';
+import { finmindUrl } from './finmind';
 
 const yahooFinance = new YahooFinance();
 
@@ -60,7 +61,7 @@ export async function fetchFinMindHistory(symbol: string, days: number = 180): P
     startDate.setDate(startDate.getDate() - days);
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    const url = `https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockPrice&data_id=${rawSymbol}&start_date=${startDateStr}`;
+    const url = finmindUrl({ dataset: 'TaiwanStockPrice', data_id: rawSymbol, start_date: startDateStr });
 
     try {
         const response = await fetch(url);
