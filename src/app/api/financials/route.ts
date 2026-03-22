@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { finmindUrl } from '@/lib/finmind';
 
 interface IncomeItem {
   date: string;
@@ -21,7 +22,6 @@ interface BalanceData {
   currentRatio: number;
 }
 
-const FINMIND_BASE = 'https://api.finmindtrade.com/api/v4/data';
 const FETCH_TIMEOUT = 8000;
 
 async function fetchWithTimeout(url: string): Promise<Response> {
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function fetchIncome(symbol: string, startDate: string, endDate: string): Promise<IncomeItem[]> {
-  const url = `${FINMIND_BASE}?dataset=TaiwanStockFinancialStatements&data_id=${symbol}&start_date=${startDate}&end_date=${endDate}`;
+  const url = finmindUrl({ dataset: 'TaiwanStockFinancialStatements', data_id: symbol, start_date: startDate, end_date: endDate });
   const res = await fetchWithTimeout(url);
   const data = await res.json();
 
@@ -97,7 +97,7 @@ async function fetchIncome(symbol: string, startDate: string, endDate: string): 
 }
 
 async function fetchDividends(symbol: string, startDate: string, endDate: string): Promise<DividendItem[]> {
-  const url = `${FINMIND_BASE}?dataset=TaiwanStockDividend&data_id=${symbol}&start_date=${startDate}&end_date=${endDate}`;
+  const url = finmindUrl({ dataset: 'TaiwanStockDividend', data_id: symbol, start_date: startDate, end_date: endDate });
   const res = await fetchWithTimeout(url);
   const data = await res.json();
 
@@ -128,7 +128,7 @@ async function fetchDividends(symbol: string, startDate: string, endDate: string
 }
 
 async function fetchBalance(symbol: string, startDate: string, endDate: string): Promise<BalanceData> {
-  const url = `${FINMIND_BASE}?dataset=TaiwanStockBalanceSheet&data_id=${symbol}&start_date=${startDate}&end_date=${endDate}`;
+  const url = finmindUrl({ dataset: 'TaiwanStockBalanceSheet', data_id: symbol, start_date: startDate, end_date: endDate });
   const res = await fetchWithTimeout(url);
   const data = await res.json();
 
