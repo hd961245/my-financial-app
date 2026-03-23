@@ -73,6 +73,49 @@ export async function POST(request: Request) {
             updated++;
         }
 
+        // ── Also check DailyRecommendation hits (BUY/SELL only, after 5 days) ──
+        const recCutoff = new Date();
+        recCutoff.setDate(recCutoff.getDate() - 5);
+
+        const uncheckedRecs = await prisma.dailyRecommendation.findMany({
+            where: {
+                date: { lte: recCutoff },
+                isHit: null,
+                action: { in: ['STRONG_BUY', 'BUY', 'REDUCE', 'SELL'] },
+            },
+        });
+
+        if (uncheckedRecs.length > 0) {
+            const recSymbols = [...new Set(uncheckedRecs.map(r => r.symbol))];
+            const recQuoteMap = new Map<string, number>();
+            await Promise.allSettled(
+                recSymbols.map(async (s) => {
+                    if (quoteMap.has(s)) { recQuoteMap.set(s, quoteMap.get(s)!); return; }
+                    try {
+                        const q = await yahooFinance.quote(s) as any;
+                        if (q?.regularMarketPrice) recQuoteMap.set(s, q.regularMarketPrice);
+                    } catch { /* skip */ }
+                })
+            );
+
+            for (const rec of uncheckedRecs) {
+                const resultPrice = recQuoteMap.get(rec.symbol);
+                if (!resultPrice) continue;
+                const isBullish = rec.action === 'STRONG_BUY' || rec.action === 'BUY';
+                const isBearish = rec.action === 'REDUCE' || rec.action === 'SELL';
+                const isHit = isBullish
+                    ? resultPrice > rec.price
+                    : isBearish
+                        ? resultPrice < rec.price
+                        : null;
+                if (isHit === null) continue;
+                await prisma.dailyRecommendation.update({
+                    where: { id: rec.id },
+                    data: { resultPrice, resultDate: now, isHit },
+                });
+            }
+        }
+
         return NextResponse.json({ success: true, updated });
     } catch (error: any) {
         console.error('Update Performance Error:', error);

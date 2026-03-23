@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SMA, RSI } from 'technicalindicators';
 import { fetchChartData } from '@/lib/data-providers';
+import { prisma } from '@/lib/prisma';
 
 interface BacktestParams {
   symbol: string;
@@ -31,6 +32,18 @@ interface EquityPoint {
 }
 
 const INITIAL_CAPITAL = 100000;
+
+export async function GET() {
+  try {
+    const history = await prisma.backtestResult.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return NextResponse.json(history);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -214,19 +227,33 @@ export async function POST(req: NextRequest) {
       if (drawdown > maxDrawdown) maxDrawdown = drawdown;
     }
 
-    return NextResponse.json({
-      symbol: querySymbol,
-      trades,
-      equityCurve,
-      stats: {
-        totalReturn: Math.round(totalReturn * 100) / 100,
-        winRate: Math.round(winRate * 100) / 100,
-        totalTrades: trades.filter(t => t.type === 'BUY').length,
-        maxDrawdown: Math.round(maxDrawdown * 100) / 100,
+    const stats = {
+      totalReturn: Math.round(totalReturn * 100) / 100,
+      winRate: Math.round(winRate * 100) / 100,
+      totalTrades: trades.filter(t => t.type === 'BUY').length,
+      maxDrawdown: Math.round(maxDrawdown * 100) / 100,
+      initialCapital: INITIAL_CAPITAL,
+      finalValue: Math.round(finalValue * 100) / 100,
+    };
+
+    // Save result to DB (fire-and-forget, don't fail the response)
+    prisma.backtestResult.create({
+      data: {
+        symbol: querySymbol,
+        strategy,
+        startDate,
+        endDate,
+        params: JSON.stringify(params),
+        totalReturn: stats.totalReturn,
+        winRate: stats.winRate,
+        totalTrades: stats.totalTrades,
+        maxDrawdown: stats.maxDrawdown,
+        finalValue: stats.finalValue,
         initialCapital: INITIAL_CAPITAL,
-        finalValue: Math.round(finalValue * 100) / 100,
-      }
-    });
+      },
+    }).catch(e => console.warn('Failed to save backtest result:', e));
+
+    return NextResponse.json({ symbol: querySymbol, trades, equityCurve, stats });
 
   } catch (error: any) {
     console.error('Backtest error:', error);
