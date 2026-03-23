@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
     Trophy, TrendingUp, TrendingDown, Settings,
     RefreshCw, Zap, BarChart3, Clock, Target, Shield, X, Plus,
-    Brain, ChevronDown, ChevronUp, Sparkles,
+    Brain, ChevronDown, ChevronUp, Sparkles, Medal, Star, Flame,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,6 +42,39 @@ interface LeaderboardEntry {
     total: number;
     wins: number;
     totalReturn: number;
+}
+
+interface GameBadge {
+    id: string;
+    emoji: string;
+    label: string;
+    desc: string;
+    tier: 'bronze' | 'silver' | 'gold' | 'diamond';
+}
+
+interface LevelInfo {
+    level: number;
+    title: string;
+    xp: number;
+    nextXp: number | null;
+    nextTitle: string | null;
+    progress: number;
+}
+
+interface ModelGameStats {
+    totalTrades: number;
+    wins: number;
+    totalReturn: number;
+    bestReturn: number;
+    worstReturn: number;
+    maxWinStreak: number;
+    currentStreak: number;
+    currentStreakType: 'win' | 'loss' | 'none';
+    xp: number;
+    winRate: number;
+    recentResults: ('win' | 'loss')[];
+    levelInfo: LevelInfo;
+    badges: GameBadge[];
 }
 
 interface StrategyMemo {
@@ -433,6 +466,143 @@ function SettingsModal({ config, onClose, onSave }: {
     );
 }
 
+// ─── Tier colors ──────────────────────────────────────────────────────────────
+
+const TIER_STYLE: Record<string, string> = {
+    bronze:  'bg-orange-900/40 border-orange-700/60 text-orange-300',
+    silver:  'bg-zinc-700/40  border-zinc-500/60  text-zinc-200',
+    gold:    'bg-yellow-900/40 border-yellow-600/60 text-yellow-300',
+    diamond: 'bg-cyan-900/40  border-cyan-600/60  text-cyan-200',
+};
+
+// ─── GameStats Panel ──────────────────────────────────────────────────────────
+
+function GameStatsPanel({ stats }: { stats: Record<string, ModelGameStats> | null }) {
+    if (!stats) {
+        return (
+            <div className="text-center py-12 text-muted-foreground">
+                <Medal className="w-12 h-12 mx-auto opacity-30 mb-3" />
+                <p>載入戰績中...</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="text-sm text-muted-foreground">
+                每完成一筆交易累積 XP：獲利 +15（加報酬獎勵）、虧損 +5（參與獎勵）。達成里程碑解鎖徽章。
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {(['claude', 'openai', 'gemini'] as const).map(model => {
+                    const s = stats[model];
+                    if (!s) return null;
+                    const { levelInfo } = s;
+                    return (
+                        <div key={model} className={`rounded-xl border-2 p-4 space-y-4 ${MODEL_COLORS[model]}`}>
+                            {/* Model name + level */}
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <div className={`font-bold text-base ${MODEL_ACCENT[model]}`}>{MODEL_LABELS[model]}</div>
+                                    <div className="text-xs text-muted-foreground mt-0.5">
+                                        Lv.{levelInfo.level} · {levelInfo.title}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="text-xs text-muted-foreground">XP</div>
+                                    <div className="font-mono font-bold text-sm">{s.xp}</div>
+                                </div>
+                            </div>
+
+                            {/* XP progress bar */}
+                            <div className="space-y-1">
+                                <div className="flex justify-between text-xs text-muted-foreground">
+                                    <span>{levelInfo.xp} XP</span>
+                                    <span>{levelInfo.nextXp != null ? `→ ${levelInfo.nextXp} XP (${levelInfo.nextTitle})` : '最高等級'}</span>
+                                </div>
+                                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                                    <div
+                                        className="h-2 rounded-full bg-gradient-to-r from-yellow-500 to-orange-500 transition-all"
+                                        style={{ width: `${levelInfo.progress}%` }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Stats grid */}
+                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                                <div className="bg-muted/40 rounded-lg p-2">
+                                    <div className="text-muted-foreground">勝率</div>
+                                    <div className={`font-bold mt-0.5 ${s.winRate >= 55 ? 'text-green-400' : s.winRate >= 45 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        {s.totalTrades > 0 ? s.winRate.toFixed(0) : '-'}%
+                                    </div>
+                                </div>
+                                <div className="bg-muted/40 rounded-lg p-2">
+                                    <div className="text-muted-foreground">累計報酬</div>
+                                    <div className={`font-bold font-mono mt-0.5 ${s.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                        {s.totalTrades > 0 ? `${s.totalReturn > 0 ? '+' : ''}${s.totalReturn.toFixed(1)}%` : '-'}
+                                    </div>
+                                </div>
+                                <div className="bg-muted/40 rounded-lg p-2">
+                                    <div className="text-muted-foreground">連勝紀錄</div>
+                                    <div className="font-bold mt-0.5 text-yellow-400">{s.maxWinStreak}</div>
+                                </div>
+                            </div>
+
+                            {/* Current streak */}
+                            {s.currentStreakType !== 'none' && s.currentStreak > 0 && (
+                                <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg ${s.currentStreakType === 'win' ? 'bg-green-950/40 text-green-400' : 'bg-red-950/40 text-red-400'}`}>
+                                    <Flame className="w-3 h-3" />
+                                    <span>
+                                        {s.currentStreakType === 'win' ? '連勝' : '連敗'} {s.currentStreak} 筆
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Recent results sparkline */}
+                            {s.recentResults.length > 0 && (
+                                <div className="space-y-1">
+                                    <div className="text-xs text-muted-foreground">近期（最舊→最新）</div>
+                                    <div className="flex gap-1">
+                                        {s.recentResults.map((r, i) => (
+                                            <div
+                                                key={i}
+                                                title={r === 'win' ? '獲利' : '虧損'}
+                                                className={`h-4 flex-1 rounded-sm ${r === 'win' ? 'bg-green-500' : 'bg-red-500'}`}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Badges */}
+                            {s.badges.length > 0 ? (
+                                <div className="space-y-1.5">
+                                    <div className="text-xs text-muted-foreground font-medium">已解鎖徽章</div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {s.badges.map(b => (
+                                            <div
+                                                key={b.id}
+                                                title={b.desc}
+                                                className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${TIER_STYLE[b.tier]}`}
+                                            >
+                                                <span>{b.emoji}</span>
+                                                <span>{b.label}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-xs text-muted-foreground text-center py-1">
+                                    尚無徽章 — 完成交易即可解鎖
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function AITradingArena() {
@@ -447,6 +617,7 @@ export default function AITradingArena() {
     const [strategies, setStrategies] = useState<Record<string, StrategyMemo | null>>({
         claude: null, openai: null, gemini: null,
     });
+    const [gamestats, setGamestats] = useState<Record<string, ModelGameStats> | null>(null);
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
@@ -456,17 +627,20 @@ export default function AITradingArena() {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [todayRes, histRes] = await Promise.all([
+            const [todayRes, histRes, gameRes] = await Promise.all([
                 fetch('/api/ai-trading'),
                 fetch('/api/ai-trading?history=1'),
+                fetch('/api/ai-trading/gamestats'),
             ]);
             const todayData = await todayRes.json();
             const histData = await histRes.json();
+            const gameData = await gameRes.json();
             if (todayData.recs) setRecs(todayData.recs);
             if (todayData.leaderboard) setLeaderboard(todayData.leaderboard);
             if (todayData.config) setConfig(todayData.config);
             if (todayData.strategies) setStrategies(todayData.strategies);
             if (histData.history) setHistory(histData.history);
+            if (!gameData.error) setGamestats(gameData);
         } catch { /* ignore */ } finally {
             setLoading(false);
         }
@@ -564,6 +738,9 @@ export default function AITradingArena() {
                     <TabsTrigger value="history">
                         <Clock className="w-4 h-4 mr-1" />歷史績效
                     </TabsTrigger>
+                    <TabsTrigger value="gamestats">
+                        <Medal className="w-4 h-4 mr-1" />戰績
+                    </TabsTrigger>
                 </TabsList>
 
                 {/* ── Today's picks ── */}
@@ -604,6 +781,11 @@ export default function AITradingArena() {
                             setStrategies(prev => ({ ...prev, [model]: memo }))
                         }
                     />
+                </TabsContent>
+
+                {/* ── GameStats ── */}
+                <TabsContent value="gamestats" className="mt-4">
+                    <GameStatsPanel stats={gamestats} />
                 </TabsContent>
 
                 {/* ── History ── */}

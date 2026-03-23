@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +61,16 @@ export function Backtester() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [error, setError] = useState('');
+  const [history, setHistory] = useState<{
+    id: number; symbol: string; strategy: string; startDate: string; endDate: string;
+    totalReturn: number; winRate: number; totalTrades: number; maxDrawdown: number; createdAt: string;
+  }[]>([]);
+
+  useEffect(() => {
+    fetch('/api/backtest').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setHistory(data);
+    }).catch(() => {});
+  }, [result]); // refresh after each new backtest
 
   const toggleCondition = (list: string[], setList: (v: string[]) => void, val: string) => {
     setList(list.includes(val) ? list.filter(c => c !== val) : [...list, val]);
@@ -351,6 +361,47 @@ export function Backtester() {
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* History */}
+      {history.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">歷史回測紀錄</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-muted-foreground text-xs">
+                    <th className="text-left py-2 pr-3">代號</th>
+                    <th className="text-left py-2 pr-3">策略</th>
+                    <th className="text-left py-2 pr-3">區間</th>
+                    <th className="text-right py-2 pr-3">報酬</th>
+                    <th className="text-right py-2 pr-3">勝率</th>
+                    <th className="text-right py-2 pr-3">最大回落</th>
+                    <th className="text-right py-2">筆數</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map(h => (
+                    <tr key={h.id} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="py-2 pr-3 font-mono font-medium text-xs">{h.symbol}</td>
+                      <td className="py-2 pr-3 text-xs text-muted-foreground">{h.strategy}</td>
+                      <td className="py-2 pr-3 text-xs text-muted-foreground whitespace-nowrap">{h.startDate} ~ {h.endDate}</td>
+                      <td className={`py-2 pr-3 text-right font-mono font-bold text-xs ${h.totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {h.totalReturn >= 0 ? '+' : ''}{h.totalReturn.toFixed(2)}%
+                      </td>
+                      <td className="py-2 pr-3 text-right text-xs">{h.winRate.toFixed(1)}%</td>
+                      <td className="py-2 pr-3 text-right text-xs text-red-400">-{h.maxDrawdown.toFixed(2)}%</td>
+                      <td className="py-2 text-right text-xs">{h.totalTrades}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

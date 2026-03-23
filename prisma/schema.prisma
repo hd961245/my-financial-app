@@ -84,20 +84,24 @@ model SystemSetting {
 }
 
 model DailyRecommendation {
-  id        Int      @id @default(autoincrement())
-  date      DateTime @default(now())
-  symbol    String
-  name      String
-  action    String   // 'STRONG_BUY', 'BUY', 'HOLD', 'REDUCE', 'SELL', 'WATCH', 'AVOID'
-  reason    String
-  price     Float
-  trend     String
-  rsi       Float?
-  isHolding Boolean  @default(false) // true = currently held, false = watchlist
-  createdAt DateTime @default(now())
+  id          Int       @id @default(autoincrement())
+  date        DateTime  @default(now())
+  symbol      String
+  name        String
+  action      String    // 'STRONG_BUY', 'BUY', 'HOLD', 'REDUCE', 'SELL', 'WATCH', 'AVOID'
+  reason      String
+  price       Float
+  trend       String
+  rsi         Float?
+  isHolding   Boolean   @default(false) // true = currently held, false = watchlist
+  resultPrice Float?    // price checked after N days
+  resultDate  DateTime? // when the result was checked
+  isHit       Boolean?  // true if price moved in predicted direction
+  createdAt   DateTime  @default(now())
 
   @@index([date])
   @@index([symbol])
+  @@index([isHit])
 }
 
 model DailyReport {
@@ -123,6 +127,25 @@ model PriceAlert {
 
   @@index([symbol])
   @@index([isActive])
+}
+
+model BacktestResult {
+  id           Int      @id @default(autoincrement())
+  symbol       String
+  strategy     String   // 'MA_CROSS' | 'RSI' | 'CUSTOM'
+  startDate    String   // YYYY-MM-DD
+  endDate      String
+  params       String   // JSON: strategy params
+  totalReturn  Float
+  winRate      Float
+  totalTrades  Int
+  maxDrawdown  Float
+  finalValue   Float
+  initialCapital Float  @default(100000)
+  createdAt    DateTime @default(now())
+
+  @@index([symbol])
+  @@index([createdAt])
 }
 
 model AITradingRec {
