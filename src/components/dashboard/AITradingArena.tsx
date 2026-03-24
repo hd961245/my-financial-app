@@ -468,7 +468,7 @@ function SettingsModal({ config, onClose, onSave }: {
 
 // ─── Tier colors ──────────────────────────────────────────────────────────────
 
-const TIER_STYLE: Record<string, string> = {
+const TIER_STYLE: Record<'bronze' | 'silver' | 'gold' | 'diamond', string> = {
     bronze:  'bg-orange-900/40 border-orange-700/60 text-orange-300',
     silver:  'bg-zinc-700/40  border-zinc-500/60  text-zinc-200',
     gold:    'bg-yellow-900/40 border-yellow-600/60 text-yellow-300',
@@ -499,7 +499,6 @@ function GameStatsPanel({ stats }: { stats: Record<string, ModelGameStats> | nul
                     const { levelInfo } = s;
                     return (
                         <div key={model} className={`rounded-xl border-2 p-4 space-y-4 ${MODEL_COLORS[model]}`}>
-                            {/* Model name + level */}
                             <div className="flex items-start justify-between">
                                 <div>
                                     <div className={`font-bold text-base ${MODEL_ACCENT[model]}`}>{MODEL_LABELS[model]}</div>
@@ -513,7 +512,6 @@ function GameStatsPanel({ stats }: { stats: Record<string, ModelGameStats> | nul
                                 </div>
                             </div>
 
-                            {/* XP progress bar */}
                             <div className="space-y-1">
                                 <div className="flex justify-between text-xs text-muted-foreground">
                                     <span>{levelInfo.xp} XP</span>
@@ -527,7 +525,6 @@ function GameStatsPanel({ stats }: { stats: Record<string, ModelGameStats> | nul
                                 </div>
                             </div>
 
-                            {/* Stats grid */}
                             <div className="grid grid-cols-3 gap-2 text-center text-xs">
                                 <div className="bg-muted/40 rounded-lg p-2">
                                     <div className="text-muted-foreground">勝率</div>
@@ -547,17 +544,13 @@ function GameStatsPanel({ stats }: { stats: Record<string, ModelGameStats> | nul
                                 </div>
                             </div>
 
-                            {/* Current streak */}
                             {s.currentStreakType !== 'none' && s.currentStreak > 0 && (
                                 <div className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg ${s.currentStreakType === 'win' ? 'bg-green-950/40 text-green-400' : 'bg-red-950/40 text-red-400'}`}>
                                     <Flame className="w-3 h-3" />
-                                    <span>
-                                        {s.currentStreakType === 'win' ? '連勝' : '連敗'} {s.currentStreak} 筆
-                                    </span>
+                                    <span>{s.currentStreakType === 'win' ? '連勝' : '連敗'} {s.currentStreak} 筆</span>
                                 </div>
                             )}
 
-                            {/* Recent results sparkline */}
                             {s.recentResults.length > 0 && (
                                 <div className="space-y-1">
                                     <div className="text-xs text-muted-foreground">近期（最舊→最新）</div>
@@ -573,7 +566,6 @@ function GameStatsPanel({ stats }: { stats: Record<string, ModelGameStats> | nul
                                 </div>
                             )}
 
-                            {/* Badges */}
                             {s.badges.length > 0 ? (
                                 <div className="space-y-1.5">
                                     <div className="text-xs text-muted-foreground font-medium">已解鎖徽章</div>

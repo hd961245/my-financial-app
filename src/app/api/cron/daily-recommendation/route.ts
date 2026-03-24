@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { analyzeStock } from '@/lib/analysis';
 import { claudeJSON } from '@/lib/claude';
+import { verifyCronSecret } from '@/lib/cron-auth';
+import { sendDiscordWebhook } from '@/lib/discord-bot';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -23,13 +25,6 @@ interface AIResponse {
     stocks: StockRec[];
     spotlight: { symbol: string; reason: string }[];
     fullReport: string;
-}
-
-function verifyCronSecret(request: Request): boolean {
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret) return true;
-    return authHeader === `Bearer ${cronSecret}`;
 }
 
 export async function GET(request: Request) {
@@ -223,27 +218,13 @@ export async function GET(request: Request) {
         }
 
         // 6. Discord notification
-        const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-        if (discordWebhookUrl) {
-            try {
-                let discordMsg = `📋 **每日 AI 操作建議** (${today.toLocaleDateString('zh-TW')})\n\n${parsed.summary}\n\n`;
-                if (triggeredAlerts.length > 0) {
-                    discordMsg += `**⚠️ 到價提醒：**\n${triggeredAlerts.join('\n')}\n\n`;
-                }
-                const reportSnippet = parsed.fullReport.length > 1500
-                    ? parsed.fullReport.substring(0, 1495) + '...'
-                    : parsed.fullReport;
-                discordMsg += reportSnippet;
-
-                await fetch(discordWebhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: discordMsg.substring(0, 2000) }),
-                });
-            } catch (discordErr) {
-                console.warn('Discord notification failed:', discordErr);
-            }
+        let discordMsg = `📋 **每日 AI 操作建議** (${today.toLocaleDateString('zh-TW')})\n\n${parsed.summary}\n\n`;
+        if (triggeredAlerts.length > 0) {
+            discordMsg += `**⚠️ 到價提醒：**\n${triggeredAlerts.join('\n')}\n\n`;
         }
+        const reportSnippet = parsed.fullReport.length > 1500 ? parsed.fullReport.substring(0, 1495) + '...' : parsed.fullReport;
+        discordMsg += reportSnippet;
+        await sendDiscordWebhook(discordMsg);
 
         return NextResponse.json({
             success: true,

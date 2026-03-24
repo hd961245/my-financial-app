@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import YahooFinance from 'yahoo-finance2';
+import { verifyCronSecret } from '@/lib/cron-auth';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
-
-function verifyCronSecret(request: Request): boolean {
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret) return true;
-    return authHeader === `Bearer ${cronSecret}`;
-}
 
 // POST /api/ai-trading/update-performance
 // Closes open recs that have exceeded close_days and records P&L
@@ -51,27 +45,19 @@ export async function POST(request: Request) {
             })
         );
 
-        let updated = 0;
         const now = new Date();
-        for (const rec of openRecs) {
+        const aiRecUpdates = openRecs.flatMap(rec => {
             const exitPrice = quoteMap.get(rec.symbol);
-            if (!exitPrice) continue;
-            const returnPct = rec.entryPrice > 0
-                ? ((exitPrice - rec.entryPrice) / rec.entryPrice) * 100
-                : 0;
-            // For SELL recs, profit is inverted
+            if (!exitPrice) return [];
+            const returnPct = rec.entryPrice > 0 ? ((exitPrice - rec.entryPrice) / rec.entryPrice) * 100 : 0;
             const adjustedReturn = rec.action === 'SELL' ? -returnPct : returnPct;
-            await prisma.aITradingRec.update({
+            return [prisma.aITradingRec.update({
                 where: { id: rec.id },
-                data: {
-                    exitPrice,
-                    returnPct: adjustedReturn,
-                    isWin: adjustedReturn > 0,
-                    closedAt: now,
-                },
-            });
-            updated++;
-        }
+                data: { exitPrice, returnPct: adjustedReturn, isWin: adjustedReturn > 0, closedAt: now },
+            })];
+        });
+        await prisma.$transaction(aiRecUpdates);
+        const updated = aiRecUpdates.length;
 
         // ── Also check DailyRecommendation hits (BUY/SELL only, after 5 days) ──
         const recCutoff = new Date();
@@ -98,22 +84,17 @@ export async function POST(request: Request) {
                 })
             );
 
-            for (const rec of uncheckedRecs) {
+            const recUpdates = uncheckedRecs.flatMap(rec => {
                 const resultPrice = recQuoteMap.get(rec.symbol);
-                if (!resultPrice) continue;
+                if (!resultPrice) return [];
                 const isBullish = rec.action === 'STRONG_BUY' || rec.action === 'BUY';
-                const isBearish = rec.action === 'REDUCE' || rec.action === 'SELL';
-                const isHit = isBullish
-                    ? resultPrice > rec.price
-                    : isBearish
-                        ? resultPrice < rec.price
-                        : null;
-                if (isHit === null) continue;
-                await prisma.dailyRecommendation.update({
+                const isHit = isBullish ? resultPrice > rec.price : resultPrice < rec.price;
+                return [prisma.dailyRecommendation.update({
                     where: { id: rec.id },
                     data: { resultPrice, resultDate: now, isHit },
-                });
-            }
+                })];
+            });
+            await prisma.$transaction(recUpdates);
         }
 
         return NextResponse.json({ success: true, updated });

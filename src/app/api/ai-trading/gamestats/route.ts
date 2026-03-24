@@ -175,6 +175,9 @@ function computeStats(recs: { returnPct: number | null; isWin: boolean | null; c
 
 // ─── GET /api/ai-trading/gamestats ───────────────────────────────────────────
 
+const MODELS = ['claude', 'openai', 'gemini'] as const;
+type Model = typeof MODELS[number];
+
 export async function GET() {
     try {
         const allClosed = await prisma.aITradingRec.findMany({
@@ -183,37 +186,37 @@ export async function GET() {
             orderBy: { closedAt: 'asc' },
         });
 
-        const models = ['claude', 'openai', 'gemini'];
-        const result: Record<string, any> = {};
+        // Single pass: bucket records by model and collect month stats simultaneously
+        const monthStart = new Date();
+        monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
-        // Check monthly champion (current month)
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthRecs = allClosed.filter(r => r.closedAt! >= monthStart);
-        const monthWinRates: Record<string, number> = {};
-        for (const m of models) {
-            const mrs = monthRecs.filter(r => r.aiModel === m && r.returnPct != null);
-            if (mrs.length >= 3) {
-                monthWinRates[m] = mrs.filter(r => r.isWin).length / mrs.length;
+        const byModel: Record<Model, typeof allClosed> = { claude: [], openai: [], gemini: [] };
+        const monthByModel: Record<Model, { total: number; wins: number }> = {
+            claude: { total: 0, wins: 0 }, openai: { total: 0, wins: 0 }, gemini: { total: 0, wins: 0 },
+        };
+
+        for (const r of allClosed) {
+            const m = r.aiModel as Model;
+            if (!byModel[m]) continue;
+            byModel[m].push(r);
+            if (r.closedAt! >= monthStart && r.returnPct != null) {
+                monthByModel[m].total++;
+                if (r.isWin) monthByModel[m].wins++;
             }
         }
-        const monthChampion = Object.entries(monthWinRates).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
-        for (const model of models) {
-            const recs = allClosed.filter(r => r.aiModel === model);
-            const stats = computeStats(recs);
+        const monthChampion = MODELS
+            .filter(m => monthByModel[m].total >= 3)
+            .sort((a, b) => (monthByModel[b].wins / monthByModel[b].total) - (monthByModel[a].wins / monthByModel[a].total))[0] ?? null;
+
+        const result: Record<string, any> = {};
+        for (const model of MODELS) {
+            const stats = computeStats(byModel[model]);
             const levelInfo = computeLevel(stats.xp);
-
-            // Compute badges
-            const earned = BADGE_DEFS.filter(b => b.check(stats)).map(b => ({
-                id: b.id, emoji: b.emoji, label: b.label, desc: b.desc, tier: b.tier,
-            }));
-
-            // Monthly champion badge
+            const earned = BADGE_DEFS.filter(b => b.check(stats)).map(({ check: _c, ...b }) => b);
             if (monthChampion === model && stats.totalTrades >= 3) {
-                earned.push({ id: 'month_champ', emoji: '🥇', label: '本月冠軍', desc: '本月勝率最高', tier: 'gold' });
+                earned.push({ id: 'month_champ', emoji: '🥇', label: '本月冠軍', desc: '本月勝率最高', tier: 'gold' as const });
             }
-
             result[model] = {
                 ...stats,
                 levelInfo,

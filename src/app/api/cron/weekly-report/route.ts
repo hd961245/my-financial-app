@@ -3,16 +3,11 @@ import { prisma } from '@/lib/prisma';
 import { fetchGoogleSheetData } from '@/lib/google-sheets';
 import { analyzeStock } from '@/lib/analysis';
 import { claudeText } from '@/lib/claude';
+import { verifyCronSecret } from '@/lib/cron-auth';
+import { sendDiscordWebhook } from '@/lib/discord-bot';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
-
-function verifyCronSecret(request: Request): boolean {
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-    if (!cronSecret) return true;
-    return authHeader === `Bearer ${cronSecret}`;
-}
 
 export async function GET(request: Request) {
     if (!verifyCronSecret(request)) {
@@ -106,20 +101,8 @@ export async function GET(request: Request) {
 
         const finalReport = await claudeText(systemPrompt, userPrompt, 3000);
 
-        const discordWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
-        if (discordWebhookUrl && finalReport) {
-            try {
-                const discordContent = finalReport.length > 2000
-                    ? finalReport.substring(0, 1995) + '...'
-                    : finalReport;
-                await fetch(discordWebhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: `📊 **每週自選股 AI 健檢報告**\n\n${discordContent}` }),
-                });
-            } catch (discordErr) {
-                console.warn('Failed to send webhook to Discord:', discordErr);
-            }
+        if (finalReport) {
+            await sendDiscordWebhook(`📊 **每週自選股 AI 健檢報告**\n\n${finalReport}`);
         }
 
         return NextResponse.json({

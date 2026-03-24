@@ -119,3 +119,19 @@ export async function registerDiscordBot() {
         console.error('[Discord Bot] Connection failed (did you set the correct token?):', error);
     }
 }
+
+// ─── Webhook (one-way push) ───────────────────────────────────────────────────
+
+export async function sendDiscordWebhook(content: string): Promise<void> {
+    const url = process.env.DISCORD_WEBHOOK_URL;
+    if (!url) return;
+    try {
+        await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: content.substring(0, 2000) }),
+        });
+    } catch (e) {
+        console.warn("[Discord Webhook] Failed:", e);
+    }
+}
