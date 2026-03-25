@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Search, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { TermTooltip } from "@/components/ui/term-tooltip";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import TaiwanCoverageReport from "@/components/dashboard/TaiwanCoverageReport";
 
 export function StockHealthAnalyzer() {
     const [query, setQuery] = useState("");
@@ -531,7 +532,33 @@ export function StockHealthAnalyzer() {
                         </CardContent>
                     </Card>
                 )}
+
+                {/* Taiwan Coverage Report — shown only for Taiwan stocks */}
+                {isTaiwanStock(query) && (
+                    <Card>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg">台股研究報告</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <TaiwanCoverageReport
+                                initialTicker={query.replace(/\.(TW|TWO)$/i, '')}
+                            />
+                        </CardContent>
+                    </Card>
+                )}
                 </>
+            )}
+
+            {/* Standalone Taiwan Coverage panel (when no stock searched yet) */}
+            {!stockData && (
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-lg">台股研究報告 & 供應鏈搜尋</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <TaiwanCoverageReport />
+                    </CardContent>
+                </Card>
             )}
         </div>
     );

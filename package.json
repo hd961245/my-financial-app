@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "prisma generate && prisma db push && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "import:tw-coverage": "npx tsx scripts/import-tw-coverage.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
